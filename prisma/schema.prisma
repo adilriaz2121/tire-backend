@@ -18,6 +18,11 @@ enum Role {
   admin
 }
 
+enum DiscountType {
+  percentage
+  fixed
+}
+
 model User {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   email     String   @unique
@@ -36,4 +41,18 @@ model Articles {
   image     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model coupons {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  code         String
+  discountType DiscountType @default(percentage)
+  discount     Float
+  validFrom    DateTime?
+  validTo      DateTime?
+  maxUse       Int?
+  usedCount    Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
