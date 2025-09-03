@@ -1,0 +1,30 @@
+{
+  "name": "tire-backend",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node ./src/server.js",
+    "dev": "nodemon ./src/server.js prism generate",
+    "migrate": "prisma migrate dev",
+    "migrate:create": "prisma migrate dev --create-only",
+    "migrate:prod": "prisma migrate dev deploy",
+    "build": "npx sequelize db:migrate",
+    "init-admin": "node ./scripts/init-admin.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.15.1",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^7.0.3",
+    "nodemon": "^3.1.10",
+    "otp-generator": "^4.0.1",
+    "prisma": "^6.9.0",
+    "stripe": "^18.2.1"
+  }
+}
