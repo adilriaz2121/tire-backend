@@ -10,7 +10,7 @@ export function authGuard(role){
 
             const jwtToken = token.split(' ')[1];
 
-            const payload = jwt.verify(jwtToken, process.env.JWT_AUTHENTICATION_SECRET);
+            const payload = jwt.verify(jwtToken, process.env.JWT_SECRET);
         console.log(payload,"payload")
             if(payload.roles !== role)
                 throw new Error("You don't have access to " + role + " role")
