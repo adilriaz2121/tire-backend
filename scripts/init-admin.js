@@ -1,6 +1,5 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
-import util from "util";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -17,35 +16,40 @@ async function createFirstAdmin() {
     }
 
     try {
+        const normalizedEmail = email.toLowerCase();
+
         let user = await prisma.user.findUnique({
-            where: { email }
+            where: { email: normalizedEmail }
         });
 
         if (!user) {
-            console.log('Creating New Admin on Email: ', email);
-            const salt = await bcrypt.genSalt(10);
-            const hashPassword = util.promisify(bcrypt.hash);
-            const encryptedPassword = await hashPassword(password, salt);
-            
-            const name = email.substring(0, 4);
+            console.log('Creating new admin on email:', normalizedEmail);
+            const encryptedPassword = await bcrypt.hash(password, 10);
+            const name = normalizedEmail.split("@")[0] || "Admin";
 
             user = await prisma.user.create({
                 data: {
-                    email: email.toLowerCase(),
+                    email: normalizedEmail,
                     password: encryptedPassword,
                     name,
-                    roles: 'admin',
-                    status: 'Acticve',
-                    providers: 'email'
+                    roles: 'admin'
                 }
             });
         } else {
-            console.log('Admin already exists with email: ', email);
+            console.log('Admin already exists with email:', normalizedEmail);
+            if (user.roles !== 'admin') {
+                await prisma.user.update({
+                    where: { email: normalizedEmail },
+                    data: { roles: 'admin' }
+                });
+                console.log('Updated existing user role to admin');
+            }
         }
 
         console.log('Admin user created/updated successfully');
     } catch (error) {
         console.error('Error creating admin:', error);
+        process.exitCode = 1;
     } finally {
         await prisma.$disconnect();
     }

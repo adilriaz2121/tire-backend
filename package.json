@@ -4,11 +4,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node ./src/server.js",
-    "dev": "nodemon ./src/server.js prism generate",
+    "start": "node ./src/app.js",
+    "dev": "nodemon ./src/app.js",
     "migrate": "prisma migrate dev",
     "migrate:create": "prisma migrate dev --create-only",
-    "migrate:prod": "prisma migrate dev deploy",
+    "migrate:prod": "prisma migrate deploy",
     "build": "npx sequelize db:migrate",
     "init-admin": "node ./scripts/init-admin.js"
   },
@@ -20,6 +20,7 @@
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.15.1",
+    "morgan": "^1.10.1",
     "node-fetch": "^2.7.0",
     "nodemailer": "^7.0.3",
     "nodemon": "^3.1.10",
