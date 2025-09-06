@@ -5,7 +5,7 @@ import "dotenv/config";
 
 const app = express();
 
-app.use(cors({ origin: "*", credentials: true, optionsSuccessStatus: 202 }));
+app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
