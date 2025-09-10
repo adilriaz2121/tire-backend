@@ -4,12 +4,17 @@ import { authGuard } from "../middlewares/auth.middleware.js";
 import { signAdminIn, uploadImage } from "../controllers/admin.controller.js";
 import { createArticle, updateArticle, deleteArticle } from "../controllers/articles.controller.js";
 import { createCoupon, listCoupons, getCoupon, updateCoupon, deleteCoupon, setCouponActive, incrementCouponUsage } from "../controllers/coupons.controller.js";
-import { createProduct, getAllProducts, getProduct, updateProduct, deleteProduct, toggleProductActive } from "../controllers/products.controller.js";
+import { createProduct, getAllProducts, getProduct, updateProduct, deleteProduct, toggleProductActive, bulkUploadProducts } from "../controllers/products.controller.js";
 import { getAllContacts, getContact, updateContactStatus, deleteContact } from "../controllers/contact.controller.js";
 import { getAllReviews, getReview, updateReview, deleteReview } from "../controllers/reviews.controller.js";
 import multer from "multer";
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
 
 const adminAuthRouter = express.Router();
 
@@ -37,6 +42,7 @@ adminAuthRouter.get("/products/:id", authGuard('admin'), errorHandler(getProduct
 adminAuthRouter.put("/products/:id", authGuard('admin'), errorHandler(updateProduct));
 adminAuthRouter.delete("/products/:id", authGuard('admin'), errorHandler(deleteProduct));
 adminAuthRouter.patch("/products/:id/toggle-active", authGuard('admin'), errorHandler(toggleProductActive));
+adminAuthRouter.post("/products/bulk-upload", authGuard('admin'), upload.single('file'), errorHandler(bulkUploadProducts));
 
 // Contacts
 adminAuthRouter.get("/contacts", authGuard('admin'), errorHandler(getAllContacts));
