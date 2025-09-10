@@ -43,6 +43,81 @@ model Articles {
   updatedAt DateTime @updatedAt
 }
 
+model company {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model products {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  make        String
+  model       String
+  year        String
+  trim        String
+  size        String
+  mfg         String
+  item        String
+  detail      String
+  description String
+  quantity    Int
+  images      String[]
+  price       Float
+  reviews     Reviews[]
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Contact {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String
+  isRead    String
+  message   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum OrderStatus {
+  pending
+  shipped
+  delivered
+  cancelled
+}
+
+model order {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  email       String
+  phone       String
+  totalAmount Float
+  productIds  String[]
+  address     String
+  city        String
+  state       String?
+  zip         String?
+  country     String
+  total       Float
+  status      OrderStatus @default(pending)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Reviews {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  country    String?
+  review     String
+  rating     Int
+  isApproved Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  products   products? @relation(fields: [productsId], references: [id])
+  productsId String?   @db.ObjectId
+}
+
 model coupons {
   id           String       @id @default(auto()) @map("_id") @db.ObjectId
   code         String
