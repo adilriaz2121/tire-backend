@@ -58,6 +58,7 @@ export const getAllProducts = async (req, res, next) => {
         const make = (req.query.make || '').toString().trim();
         const model = (req.query.model || '').toString().trim();
         const year = (req.query.year || '').toString().trim();
+        const size = (req.query.size || '').toString().trim();
 
         const where = {
             ...(search && {
@@ -72,6 +73,7 @@ export const getAllProducts = async (req, res, next) => {
             ...(make && { make: { contains: make, mode: 'insensitive' } }),
             ...(model && { model: { contains: model, mode: 'insensitive' } }),
             ...(year && { year: { contains: year, mode: 'insensitive' } }),
+            ...(size && { size: { contains: size, mode: 'insensitive' } }),
         };
 
         const [items, total] = await Promise.all([
@@ -113,6 +115,10 @@ export const getAllProducts = async (req, res, next) => {
 export const getProduct = async (req, res, next) => {
     try {
         const { id } = req.params;
+        // Validate ObjectId (24 hex chars) to avoid Prisma P2023 on malformed ids
+        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+            return res.status(400).json({ error: 'Invalid product id format' });
+        }
         const product = await prisma.products.findUnique({
             where: { id },
             include: {

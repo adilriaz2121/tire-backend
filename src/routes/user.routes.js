@@ -2,6 +2,7 @@ import express from "express";
 import { errorHandler } from "../handlers/error.handlers.js";
 import { getAllArticles, getArticleDetail } from "../controllers/articles.controller.js";
 import { getAllProducts, getProduct } from "../controllers/products.controller.js";
+import { getFitment, getFilteredProducts } from "../controllers/fitment.controller.js";
 import { applyCoupon, validateCoupon } from "../controllers/coupon-apply.controller.js";
 import { createContact } from "../controllers/contact.controller.js";
 import { createReview, getAllReviews, getReview, getProductReviews } from "../controllers/reviews.controller.js";
@@ -14,7 +15,9 @@ userRouter.get("/articles/:id", errorHandler(getArticleDetail));
 
 // Products
 userRouter.get("/products", errorHandler(getAllProducts));
+userRouter.get("/products/filter", errorHandler(getFilteredProducts));
 userRouter.get("/products/:id", errorHandler(getProduct));
+userRouter.get("/fitment", errorHandler(getFitment));
 
 // Coupons
 userRouter.post("/coupons/apply", errorHandler(applyCoupon));
