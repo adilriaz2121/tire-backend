@@ -7,6 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 
 app.use(cors());
+// Stripe webhook requires raw body for signature verification; mount raw parser before JSON for this path
+app.use("/api/user/payments/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 

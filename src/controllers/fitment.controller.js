@@ -2,11 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Unified multi-step fitment endpoint
-// step=1 → companies
-// step=2&company=Make → years (distinct) for that make
-// step=3&company=Make&year=YYYY → models (distinct)
-// step=4&company=Make&year=YYYY&model=Model → sizes (distinct)
+
 export const getFitment = async (req, res, next) => {
     try {
         const step = parseInt((req.query.step || '1'), 10);
@@ -86,11 +82,18 @@ export const getFilteredProducts = async (req, res, next) => {
         const year = (req.query.year || '').toString().trim();
         const size = (req.query.size || '').toString().trim();
 
+        // Determine size filter: if it's a rim diameter like "16" or "17", use endsWith
+        const sizeCondition = size
+            ? (/^\d{2,3}$/.test(size)
+                ? { endsWith: size, mode: 'insensitive' }
+                : { equals: size, mode: 'insensitive' })
+            : undefined;
+
         const where = {
             ...(company && { make: { contains: company, mode: 'insensitive' } }),
             ...(model && { model: { contains: model, mode: 'insensitive' } }),
             ...(year && { year: { equals: year } }),
-            ...(size && { size: { contains: size, mode: 'insensitive' } }),
+            ...(sizeCondition && { size: sizeCondition }),
             isActive: true
         };
 
@@ -113,6 +116,43 @@ export const getFilteredProducts = async (req, res, next) => {
             items,
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 }
         });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+// Sizes flow: step 1 returns all unique sizes, step 2 returns sizes ending with provided rim (e.g., "16")
+export const getSizeOptions = async (req, res, next) => {
+    try {
+        const step = Math.max(parseInt((req.query.step || '1'), 10), 1);
+        const rim = (req.query.rim || req.query.end || '').toString().trim();
+
+        if (Number.isNaN(step) || step < 1 || step > 2) {
+            return res.status(400).json({ error: 'Invalid step. Must be 1-2.' });
+        }
+
+        if (step === 1) {
+            const sizes = await prisma.products.findMany({
+                distinct: ['size'],
+                select: { size: true },
+                orderBy: { size: 'asc' }
+            });
+            return res.status(200).json({ step, sizes: sizes.map(s => s.size) });
+        }
+
+        // step 2
+        if (!rim) {
+            return res.status(400).json({ error: 'rim is required for step 2' });
+        }
+
+        const sizes = await prisma.products.findMany({
+            where: { size: { endsWith: rim, mode: 'insensitive' } },
+            distinct: ['size'],
+            select: { size: true },
+            orderBy: { size: 'asc' }
+        });
+
+        return res.status(200).json({ step, rim, sizes: sizes.map(s => s.size) });
     } catch (error) {
         return next(error);
     }

@@ -2,7 +2,8 @@ import express from "express";
 import { errorHandler } from "../handlers/error.handlers.js";
 import { getAllArticles, getArticleDetail } from "../controllers/articles.controller.js";
 import { getAllProducts, getProduct } from "../controllers/products.controller.js";
-import { getFitment, getFilteredProducts } from "../controllers/fitment.controller.js";
+import { getFitment, getFilteredProducts, getSizeOptions } from "../controllers/fitment.controller.js";
+import { createPaymentIntent, stripeWebhook } from "../controllers/payments.controller.js";
 import { applyCoupon, validateCoupon } from "../controllers/coupon-apply.controller.js";
 import { createContact } from "../controllers/contact.controller.js";
 import { createReview, getAllReviews, getReview, getProductReviews } from "../controllers/reviews.controller.js";
@@ -18,6 +19,11 @@ userRouter.get("/products", errorHandler(getAllProducts));
 userRouter.get("/products/filter", errorHandler(getFilteredProducts));
 userRouter.get("/products/:id", errorHandler(getProduct));
 userRouter.get("/fitment", errorHandler(getFitment));
+userRouter.get("/sizes", errorHandler(getSizeOptions));
+
+userRouter.post("/payments/create-intent", errorHandler(createPaymentIntent));
+// Stripe webhook (raw body required - mounted in app.js before JSON parser for this path)
+userRouter.post("/payments/webhook", stripeWebhook);
 
 // Coupons
 userRouter.post("/coupons/apply", errorHandler(applyCoupon));

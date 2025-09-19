@@ -59,6 +59,17 @@ export const getAllProducts = async (req, res, next) => {
         const model = (req.query.model || '').toString().trim();
         const year = (req.query.year || '').toString().trim();
         const size = (req.query.size || '').toString().trim();
+        const rim = (req.query.rim || '').toString().trim();
+
+        // Determine size filter:
+        // - if rim is provided and looks like digits (e.g., "16"), filter sizes ending with it
+        // - else if a size string is provided, match equals (full size) or contains
+        const sizeFilterInput = rim || size;
+        const sizeCondition = sizeFilterInput
+            ? (/^\d{2,3}$/.test(sizeFilterInput)
+                ? { endsWith: sizeFilterInput, mode: 'insensitive' }
+                : { equals: sizeFilterInput, mode: 'insensitive' })
+            : undefined;
 
         const where = {
             ...(search && {
@@ -73,7 +84,7 @@ export const getAllProducts = async (req, res, next) => {
             ...(make && { make: { contains: make, mode: 'insensitive' } }),
             ...(model && { model: { contains: model, mode: 'insensitive' } }),
             ...(year && { year: { contains: year, mode: 'insensitive' } }),
-            ...(size && { size: { contains: size, mode: 'insensitive' } }),
+            ...(sizeCondition && { size: sizeCondition }),
         };
 
         const [items, total] = await Promise.all([

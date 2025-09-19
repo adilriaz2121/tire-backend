@@ -7,12 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum FinSystem {
-  fcs
-  fcs11
-  futures
-}
-
 enum Role {
   user
   admin
@@ -88,21 +82,28 @@ enum OrderStatus {
 }
 
 model order {
-  id          String      @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  email       String
-  phone       String
-  totalAmount Float
-  productIds  String[]
-  address     String
-  city        String
-  state       String?
-  zip         String?
-  country     String
-  total       Float
-  status      OrderStatus @default(pending)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  email           String
+  phone           String
+  totalAmount     Float
+  productIds      String[]
+  address         String
+  city            String
+  state           String?
+  zip             String?
+  country         String
+  total           Float
+  status          OrderStatus @default(pending)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  // New fields for Stripe and structured payloads
+  paymentIntentId String?     @unique
+  currency        String?     @default("usd")
+  userInfo        Json?
+  shippingInfo    Json?
+  pricingInfo     Json?
+  productInfo     Json?
 }
 
 model Reviews {
