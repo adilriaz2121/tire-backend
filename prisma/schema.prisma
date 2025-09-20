@@ -68,6 +68,8 @@ model Contact {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   name      String
   email     String
+  phone     String
+  subject   String
   isRead    String
   message   String
   createdAt DateTime @default(now())

@@ -5,7 +5,7 @@ import { signAdminIn, uploadImage } from "../controllers/admin.controller.js";
 import { createArticle, updateArticle, deleteArticle } from "../controllers/articles.controller.js";
 import { createCoupon, listCoupons, getCoupon, updateCoupon, deleteCoupon, setCouponActive, incrementCouponUsage } from "../controllers/coupons.controller.js";
 import { createProduct, getAllProducts, getProduct, updateProduct, deleteProduct, toggleProductActive, bulkUploadProducts } from "../controllers/products.controller.js";
-import { getAllContacts, getContact, updateContactStatus, deleteContact } from "../controllers/contact.controller.js";
+import { getAllContacts, getContactById, markContactAsRead, markAllContactsAsRead, deleteContact, deleteMultipleContacts, getContactStats } from "../controllers/contact.controller.js";
 import { getAllReviews, getReview, updateReview, deleteReview } from "../controllers/reviews.controller.js";
 import multer from "multer";
 
@@ -46,9 +46,12 @@ adminAuthRouter.post("/products/bulk-upload", authGuard('admin'), upload.single(
 
 // Contacts
 adminAuthRouter.get("/contacts", authGuard('admin'), errorHandler(getAllContacts));
-adminAuthRouter.get("/contacts/:id", authGuard('admin'), errorHandler(getContact));
-adminAuthRouter.patch("/contacts/:id/status", authGuard('admin'), errorHandler(updateContactStatus));
+adminAuthRouter.get("/contacts/stats", authGuard('admin'), errorHandler(getContactStats));
+adminAuthRouter.get("/contacts/:id", authGuard('admin'), errorHandler(getContactById));
+adminAuthRouter.patch("/contacts/:id/read", authGuard('admin'), errorHandler(markContactAsRead));
+adminAuthRouter.patch("/contacts/mark-all-read", authGuard('admin'), errorHandler(markAllContactsAsRead));
 adminAuthRouter.delete("/contacts/:id", authGuard('admin'), errorHandler(deleteContact));
+adminAuthRouter.delete("/contacts/bulk/delete", authGuard('admin'), errorHandler(deleteMultipleContacts));
 
 // Reviews
 adminAuthRouter.get("/reviews", authGuard('admin'), errorHandler(getAllReviews));
