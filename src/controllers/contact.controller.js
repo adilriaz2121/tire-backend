@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 export const createContact = async (req, res, next) => {
     try {
         const { name, email, phone, subject, message } = req.body;
-
+        
         // Validate required fields
         if (!name || !email || !subject || !message) {
             return res.status(400).json({
@@ -53,7 +53,7 @@ export const createContact = async (req, res, next) => {
             }
         });
 
-        return res.status(201).json({
+        return res.status(201).json({ 
             success: true,
             message: 'Your message has been sent successfully. We will get back to you soon!',
             data: { contact }
@@ -117,9 +117,9 @@ export const getAllContacts = async (req, res, next) => {
         // Search filter (searches across multiple fields)
         if (search) {
             where.OR = [
-                { name: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
-                { subject: { contains: search, mode: 'insensitive' } },
+                    { name: { contains: search, mode: 'insensitive' } },
+                    { email: { contains: search, mode: 'insensitive' } },
+                    { subject: { contains: search, mode: 'insensitive' } },
                 { message: { contains: search, mode: 'insensitive' } }
             ];
         }
@@ -129,9 +129,9 @@ export const getAllContacts = async (req, res, next) => {
 
         // Get contacts with pagination
         const contacts = await prisma.contact.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-            skip: (page - 1) * limit,
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip: (page - 1) * limit,
             take: limit,
             select: {
                 id: true,
@@ -156,9 +156,9 @@ export const getAllContacts = async (req, res, next) => {
             data: {
                 contacts,
                 pagination: {
-                    page,
-                    limit,
-                    total,
+                page,
+                limit,
+                total,
                     totalPages,
                     hasNextPage,
                     hasPrevPage,
@@ -201,7 +201,7 @@ export const getContactById = async (req, res, next) => {
                 updatedAt: true
             }
         });
-
+        
         if (!contact) {
             return res.status(404).json({
                 success: false,
