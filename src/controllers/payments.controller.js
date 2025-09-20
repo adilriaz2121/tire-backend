@@ -1,5 +1,9 @@
 import Stripe from 'stripe';
 
+// Required environment variables:
+// STRIPE_SECRET_KEY - Your Stripe secret key (sk_test_... or sk_live_...)
+// STRIPE_WEBHOOK_SECRET - Your Stripe webhook signing secret (whsec_...)
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 	apiVersion: '2024-06-20',
 });
@@ -62,6 +66,17 @@ export const createPaymentIntent = async (req, res, next) => {
 			try { metadata.products = productInfo.map(p => `${p.productId}:${p.quantity}`).join(','); } catch {}
 		}
 
+		// Validate required fields
+		if (!email) {
+			return res.status(400).json({ error: 'Email is required in userInfo' });
+		}
+		if (!name) {
+			return res.status(400).json({ error: 'Name is required in userInfo' });
+		}
+		if (!Array.isArray(productInfo) || productInfo.length === 0) {
+			return res.status(400).json({ error: 'productInfo array is required with at least one product' });
+		}
+
 		const paymentIntent = await stripe.paymentIntents.create({
 			amount: amountInCents,
 			currency: (currency || 'usd').toLowerCase(),
@@ -101,6 +116,9 @@ export const stripeWebhook = async (req, res, next) => {
 		if (!process.env.STRIPE_WEBHOOK_SECRET) {
 			return res.status(500).json({ error: 'Stripe webhook secret not configured' });
 		}
+		if (!process.env.STRIPE_SECRET_KEY) {
+			return res.status(500).json({ error: 'Stripe secret key not configured' });
+		}
 		if (!sig) {
 			return res.status(400).send('Missing stripe-signature header');
 		}
@@ -109,9 +127,15 @@ export const stripeWebhook = async (req, res, next) => {
 
 		if (event.type === 'payment_intent.succeeded') {
 			const pi = event.data.object;
+			console.log('Payment succeeded:', pi.id);
+			
 			// Attempt to parse description back into structured payload
 			let expanded = {};
-			try { expanded = pi.description ? JSON.parse(pi.description) : {}; } catch {}
+			try { 
+				expanded = pi.description ? JSON.parse(pi.description) : {}; 
+			} catch (error) {
+				console.error('Failed to parse payment intent description:', error);
+			}
 
 			// Persist order using Prisma
 			// Import Prisma lazily to avoid circular deps; use dynamic import
@@ -126,28 +150,38 @@ export const stripeWebhook = async (req, res, next) => {
 			const productIds = productInfo.map(p => String(p.productId));
 			const totalAmount = Number(pi.amount_received) / 100;
 
-			await prisma.order.create({
-				data: {
-					name: String(userInfo.name || ''),
-					email: String(userInfo.email || ''),
-					phone: String(userInfo.phone || ''),
-					totalAmount,
-					productIds,
-					address: String(shippingInfo.address || ''),
-					city: String(shippingInfo.city || ''),
-					state: shippingInfo.state ? String(shippingInfo.state) : null,
-					zip: shippingInfo.zip ? String(shippingInfo.zip) : null,
-					country: String(shippingInfo.country || ''),
-					total: Number(pricingInfo.totalPrice ?? totalAmount),
-					status: 'delivered',
-					paymentIntentId: pi.id,
-					currency: String(pi.currency || 'usd'),
-					userInfo,
-					shippingInfo,
-					pricingInfo,
-					productInfo
-				}
-			});
+			try {
+				const order = await prisma.order.create({
+					data: {
+						name: String(userInfo.name || ''),
+						email: String(userInfo.email || ''),
+						phone: String(userInfo.phone || ''),
+						totalAmount,
+						productIds,
+						address: String(shippingInfo.address || ''),
+						city: String(shippingInfo.city || ''),
+						state: shippingInfo.state ? String(shippingInfo.state) : null,
+						zip: shippingInfo.zip ? String(shippingInfo.zip) : null,
+						country: String(shippingInfo.country || ''),
+						total: Number(pricingInfo.totalPrice ?? totalAmount),
+						status: 'pending',
+						paymentIntentId: pi.id,
+						currency: String(pi.currency || 'usd'),
+						userInfo,
+						shippingInfo,
+						pricingInfo,
+						productInfo
+					}
+				});
+				console.log('Order created successfully:', order.id);
+			} catch (dbError) {
+				console.error('Failed to create order:', dbError);
+				return res.status(500).json({ error: 'Failed to create order' });
+			} finally {
+				await prisma.$disconnect();
+			}
+		} else {
+			console.log('Unhandled event type:', event.type);
 		}
 
 		return res.json({ received: true });
