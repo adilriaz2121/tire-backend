@@ -45,11 +45,11 @@ export const getAllReviews = async (req, res, next) => {
         const page = Math.max(parseInt(req.query.page || '1', 10), 1);
         const limit = Math.min(Math.max(parseInt(req.query.limit || '10', 10), 1), 100);
         const search = (req.query.q || '').toString().trim();
+        const isApproved = req.query.isApproved ? req.query.isApproved : null;
         const rating = req.query.rating ? parseInt(req.query.rating) : null;
         const productsId = req.query.productId;
 
         const where = {
-            isApproved: true,
             ...(search && {
                 OR: [
                     { name: { contains: search, mode: 'insensitive' } },
@@ -57,7 +57,8 @@ export const getAllReviews = async (req, res, next) => {
                 ],
             }),
             ...(rating && { rating }),
-            ...(productsId && { productsId })
+            ...(productsId && { productsId }),
+            ...(isApproved && { isApproved })
         };
 
         const [items, total] = await Promise.all([
