@@ -49,7 +49,7 @@ export const getAllReviews = async (req, res, next) => {
         const productsId = req.query.productId;
 
         const where = {
-            isActive: true,
+            isApproved: true,
             ...(search && {
                 OR: [
                     { name: { contains: search, mode: 'insensitive' } },
