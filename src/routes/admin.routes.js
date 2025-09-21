@@ -54,7 +54,7 @@ adminAuthRouter.delete("/contacts/:id", authGuard('admin'), errorHandler(deleteC
 adminAuthRouter.delete("/contacts/bulk/delete", authGuard('admin'), errorHandler(deleteMultipleContacts));
 
 // Reviews
-adminAuthRouter.get("/reviews", authGuard('all'), errorHandler(getAllReviews));
+adminAuthRouter.get("/reviews", errorHandler(getAllReviews));
 adminAuthRouter.get("/reviews/:id", authGuard('admin'), errorHandler(getReview));
 adminAuthRouter.put("/reviews/:id", authGuard('admin'), errorHandler(updateReview));
 adminAuthRouter.delete("/reviews/:id", authGuard('admin'), errorHandler(deleteReview));
