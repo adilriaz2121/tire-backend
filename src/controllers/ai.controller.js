@@ -250,6 +250,71 @@ function validateQueryBasic(generatedQuery, originalQuery) {
   };
 }
 
+// Normalize and sanitize AI-generated Prisma query to match actual schema
+function sanitizeGeneratedQuery(generated) {
+  if (!generated || !generated.query) return { query: { take: 10 } };
+  const q = { ...generated.query };
+
+  // Map fields from AI schema to real schema
+  const fieldMap = {
+    brand: 'mfg',
+    created_at: 'createdAt',
+    updated_at: 'updatedAt'
+  };
+
+  const allowedFields = new Set([
+    'id','make','model','year','size','price','quantity','description','images','trim','mfg','item','detail','isActive','createdAt','updatedAt'
+  ]);
+
+  // Where clause mapping
+  if (q.where && typeof q.where === 'object') {
+    const newWhere = {};
+    for (const [key, value] of Object.entries(q.where)) {
+      const mappedKey = fieldMap[key] || key;
+      if (allowedFields.has(mappedKey)) {
+        newWhere[mappedKey] = value;
+      }
+    }
+    q.where = newWhere;
+  }
+
+  // orderBy mapping
+  if (q.orderBy) {
+    const ob = q.orderBy;
+    if (typeof ob === 'object' && !Array.isArray(ob)) {
+      const [[key, dir]] = Object.entries(ob);
+      const mappedKey = fieldMap[key] || key;
+      if (allowedFields.has(mappedKey)) {
+        q.orderBy = { [mappedKey]: dir };
+      } else {
+        delete q.orderBy;
+      }
+    }
+  }
+
+  // select whitelist
+  if (q.select && typeof q.select === 'object') {
+    const newSelect = {};
+    for (const [key, val] of Object.entries(q.select)) {
+      const mappedKey = fieldMap[key] || key;
+      if (allowedFields.has(mappedKey) && val === true) {
+        newSelect[mappedKey] = true;
+      }
+    }
+    q.select = Object.keys(newSelect).length > 0 ? newSelect : undefined;
+  }
+
+  // Provide a safe default select if none
+  if (!q.select) {
+    q.select = { id: true, make: true, model: true, year: true, size: true, price: true, quantity: true };
+  }
+
+  // Limit results
+  if (!q.take || q.take > 50) q.take = 20;
+
+  return { ...generated, query: q, operation: generated.operation || 'findMany' };
+}
+
 // Query Execution with Safety Measures
 async function executeQuery(validatedQuery, operation = "findMany") {
   try {
@@ -431,8 +496,9 @@ export const handleChat = async (req, res) => {
       });
     }
 
-    // Step 5: Execute the validated query
-    const results = await executeQuery(generatedQuery, generatedQuery.operation);
+    // Step 5: Sanitize and execute the validated query
+    const safeQuery = sanitizeGeneratedQuery(generatedQuery);
+    const results = await executeQuery(safeQuery, safeQuery.operation);
 
     // Step 6: Process and present results in natural language
     const naturalResponse = await processAndPresentResults(results, message, queryUnderstanding, conversationHistory);
