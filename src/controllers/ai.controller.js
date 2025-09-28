@@ -121,14 +121,17 @@ async function generateInformationRequest(queryUnderstanding, conversationHistor
         1. Vehicle Make (Toyota, Honda, etc.) - CRITICAL
         2. Vehicle Model (Camry, Accord, etc.) - CRITICAL  
         3. Vehicle Year (2020, 2021, etc.) - CRITICAL
-        4. Tire Size (225/65R17) - CRITICAL if not determinable from vehicle info
+        
+        DO NOT ASK FOR TIRE SIZE.
+        - Never request tire size from the user.
+        - If size is helpful, infer or show sizes from results instead.
         
         OPTIONAL BUT HELPFUL:
-        - Tire Brand preference
+        - Tire Brand preference (optional)
         - Budget range
         
         Current entities gathered: ${JSON.stringify(queryUnderstanding.entities)}
-        Missing info: ${JSON.stringify(queryUnderstanding.missing_info)}
+        Missing info (ignore tire size if present): ${JSON.stringify(queryUnderstanding.missing_info?.filter?.(x => x !== 'size') || [])}
         Conversation stage: ${queryUnderstanding.conversation_stage}
         
         GUIDELINES:
@@ -136,8 +139,8 @@ async function generateInformationRequest(queryUnderstanding, conversationHistor
         - Be conversational and helpful
         - If they have make but no model, ask for model and year together
         - If they have make/model but no year, ask for year specifically
-        - Once you have make/model/year, you can attempt a search (tire size can be determined)
-        - Don't ask for tire size if you have complete vehicle info (make/model/year)
+        - Once you have make/model/year, you can attempt a search and present available sizes in results.
+        - Never ask for tire size under any circumstance.
         
         Generate a helpful, conversational message asking for the next most important piece of information.`
       },
@@ -151,12 +154,10 @@ async function generateInformationRequest(queryUnderstanding, conversationHistor
 
 // Check if we have enough information to search
 function hasMinimumInfoForSearch(entities) {
-  // Minimum required: make + (model + year OR tire size)
+  // Minimum required: make + model + year (do not require tire size)
   const hasMake = entities.make && entities.make.trim().length > 0;
   const hasModelAndYear = entities.model && entities.year;
-  const hasTireSize = entities.size && entities.size.includes('/');
-  
-  return hasMake && (hasModelAndYear || hasTireSize);
+  return Boolean(hasMake && hasModelAndYear);
 }
 
 // Enhanced SQL Generation with better context
@@ -179,7 +180,7 @@ async function generateSQLQuery(queryUnderstanding) {
         5. Handle price ranges properly with gte/lte
         6. Use proper Prisma operators (contains, equals, gte, lte, etc.)
         7. NEVER use dangerous operations
-        8. If tire size is missing but we have make/model/year, still search (tire size can be shown in results)
+        8. Do NOT use tire size as a required filter. If size is provided, you may include it; otherwise, rely on make/model/year.
         
         Respond with ONLY a JSON object containing the Prisma query:
         {
@@ -195,7 +196,7 @@ async function generateSQLQuery(queryUnderstanding) {
       },
       { 
         role: "user", 
-        content: `Generate Prisma query for: ${JSON.stringify(queryUnderstanding, null, 2)}` 
+        content: `Generate Prisma query (ignore missing size) for: ${JSON.stringify(queryUnderstanding, null, 2)}` 
       },
     ],
     response_format: { type: "json_object" },
@@ -306,7 +307,7 @@ function sanitizeGeneratedQuery(generated) {
 
   // Provide a safe default select if none
   if (!q.select) {
-    q.select = { id: true, make: true, model: true, year: true, size: true, price: true, quantity: true };
+    q.select = { id: true, make: true, model: true, year: true, size: true, price: true, quantity: true, images: true };
   }
 
   // Limit results
@@ -334,7 +335,7 @@ async function executeQuery(validatedQuery, operation = "findMany") {
       default:
         results = await prisma.products.findMany({
           ...validatedQuery.query,
-          take: validatedQuery.query.take || 10
+          take: Math.min(validatedQuery.query.take || 10, 2) // ensure max 2 results
         });
     }
 
@@ -363,47 +364,22 @@ async function processAndPresentResults(results, originalQuery, queryUnderstandi
     return generateNoResultsResponse(queryUnderstanding);
   }
 
-  const contextMessages = conversationHistory.slice(-2).map(msg => ({
-    role: msg.role || "user",
-    content: msg.message || msg.content
-  }));
-
-  const result = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `You are a result presentation agent for a tire e-commerce site.
-        
-        Convert database results into natural, helpful responses for customers.
-        
-        Guidelines:
-        1. Be conversational and helpful, reference the conversation context
-        2. Highlight key information (price, availability, compatibility)  
-        3. Show tire size, brand, and price clearly
-        4. If showing multiple options, organize them clearly (numbered list)
-        5. Limit to showing 5-7 best options to avoid overwhelming
-        6. Mention if there are more options available
-        7. Ask if they want to see more or filter further
-        8. Use tire industry terminology appropriately
-        9. Format prices clearly with currency
-        10. Keep responses concise but informative
-        
-        Original customer query: "${originalQuery}"`
-      },
-      ...contextMessages,
-      { 
-        role: "user", 
-        content: `Present these tire search results naturally:
-        
-        Query Intent: ${queryUnderstanding.intent}
-        Results Count: ${results.count}
-        Data: ${JSON.stringify(results.data, null, 2)}` 
-      },
-    ],
-  });
-
-  return result.choices[0].message.content || "Here are your tire search results.";
+  // Limit to max 2 items and return structured payload with a small natural intro
+  const items = Array.isArray(results.data) ? results.data.slice(0, 2) : [results.data];
+  const intro = `I found ${results.count} option${results.count === 1 ? '' : 's'}. Here ${items.length === 1 ? 'is' : 'are'} a couple to consider:`;
+  return {
+    message: intro,
+    products: items.map(p => ({
+      id: p.id,
+      make: p.make,
+      model: p.model,
+      year: p.year,
+      size: p.size,
+      price: p.price,
+      quantity: p.quantity,
+      image: Array.isArray(p.images) ? p.images[0] : p.images
+    }))
+  };
 }
 
 // Generate helpful no-results responses
@@ -504,7 +480,8 @@ export const handleChat = async (req, res) => {
     const naturalResponse = await processAndPresentResults(results, message, queryUnderstanding, conversationHistory);
 
     return res.json({
-      reply: naturalResponse,
+      reply: typeof naturalResponse === 'string' ? naturalResponse : naturalResponse.message,
+      products: typeof naturalResponse === 'object' ? naturalResponse.products : undefined,
       type: "search_results",
       metadata: {
         query_understanding: queryUnderstanding,
