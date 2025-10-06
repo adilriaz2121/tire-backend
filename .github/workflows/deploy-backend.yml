@@ -1,4 +1,4 @@
-name: Deploy Tire Backend
+name: Deploy Backend
 
 on:
   push:
@@ -10,40 +10,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Generate .env file
-        run: |
-          echo "${{ secrets.SERVER_ENV }}" >> .env
-
-      - name: Sync files to server
-        uses: burnett01/rsync-deployments@6.0.0
-        with:
-          switches: -avzr --delete
-          path: .
-          remote_path: /var/www/tire-backend
-          remote_host: ${{ secrets.SERVER_HOST }}
-          remote_user: ${{ secrets.SERVER_USERNAME }}
-          remote_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-
-      - name: Install and restart backend
+      - name: Ensure /var/www permissions on server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
           script: |
-            echo "🚀 Deploying tire-backend..."
-            export NVM_DIR=~/.nvm
-            source ~/.nvm/nvm.sh
+            echo "🔧 Ensuring /var/www permissions..."
+            sudo mkdir -p /var/www/tire-backend
+            sudo chown -R $USER:$USER /var/www
+            sudo chmod -R 755 /var/www
 
+      - name: Sync Files via Rsync
+        uses: burnett01/rsync-deployments@6.0.0
+        with:
+          switches: -avzr --delete --exclude '.git' --exclude 'node_modules'
+          path: .
+          remote_path: /var/www/tire-backend
+          remote_host: ${{ secrets.SERVER_HOST }}
+          remote_user: ${{ secrets.SERVER_USERNAME }}
+          remote_key: ${{ secrets.SERVER_PRIVATE_KEY }}
+
+      - name: Deploy on Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          script: |
+            echo "🚀 Deploying backend..."
             cd /var/www/tire-backend
 
+            echo "📦 Installing dependencies..."
             npm install --production
-            npx prisma generate
-            npm run build || echo "No build script found"
 
+            echo "🔄 Running Prisma generate..."
+            npx prisma generate || echo "No Prisma setup found"
+
+            echo "🏗️ Building project..."
+            npm run build || echo "No build step"
+
+            echo "🔁 Restarting with PM2..."
             pm2 start npm --name "tire-backend" -- run start || pm2 restart tire-backend
 
-            echo "✅ Deployment finished successfully."
+            echo "✅ Backend deployment complete!"
