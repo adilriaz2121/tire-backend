@@ -51,6 +51,8 @@ jobs:
             echo "🔄 Running Prisma generate..."
             npx prisma generate || echo "No Prisma setup found"
 
+
+
             echo "🏗️ Building project..."
             npm run build || echo "No build step"
 
