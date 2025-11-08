@@ -7,7 +7,7 @@ import { createPaymentIntent, stripeWebhook } from "../controllers/payments.cont
 import { applyCoupon, validateCoupon } from "../controllers/coupon-apply.controller.js";
 import { createContact } from "../controllers/contact.controller.js";
 import { createReview, getAllReviews, getReview, getProductReviews } from "../controllers/reviews.controller.js";
-import { handleChat } from "../controllers/ai.controller.js";
+import { handleChat, identifyVehicle } from "../controllers/ai.controller.js";
 
 const userRouter = express.Router();
 
@@ -41,5 +41,6 @@ userRouter.get("/products/:productId/reviews", errorHandler(getProductReviews));
 
 // AI Assistant
 userRouter.post("/ai/query", errorHandler(handleChat));
+userRouter.post("/ai/identify-vehicle", errorHandler(identifyVehicle));
 
 export default userRouter;
