@@ -8,14 +8,13 @@ import { applyCoupon, validateCoupon } from "../controllers/coupon-apply.control
 import { createContact } from "../controllers/contact.controller.js";
 import { createReview, getAllReviews, getReview, getProductReviews } from "../controllers/reviews.controller.js";
 import { handleChat, identifyVehicle } from "../controllers/ai.controller.js";
+import { searchBusinesses, getBusinessDetails } from "../controllers/yelp.controller.js";
 
 const userRouter = express.Router();
 
-// Articles
 userRouter.get("/articles", errorHandler(getAllArticles));
 userRouter.get("/articles/:id", errorHandler(getArticleDetail));
 
-// Products
 userRouter.get("/products", errorHandler(getAllProducts));
 userRouter.get("/products/filter", errorHandler(getFilteredProducts));
 userRouter.get("/products/:id", errorHandler(getProduct));
@@ -23,24 +22,22 @@ userRouter.get("/fitment", errorHandler(getFitment));
 userRouter.get("/sizes", errorHandler(getSizeOptions));
 
 userRouter.post("/payments/create-intent", errorHandler(createPaymentIntent));
-// Stripe webhook (raw body required - mounted in app.js before JSON parser for this path)
 userRouter.post("/payments/webhook", stripeWebhook);
 
-// Coupons
 userRouter.post("/coupons/apply", errorHandler(applyCoupon));
 userRouter.get("/coupons/validate/:code", errorHandler(validateCoupon));
 
-// Contact
 userRouter.post("/contact", errorHandler(createContact));
 
-// Reviews
 userRouter.post("/reviews", errorHandler(createReview));
 userRouter.get("/reviews", errorHandler(getAllReviews));
 userRouter.get("/reviews/:id", errorHandler(getReview));
 userRouter.get("/products/:productId/reviews", errorHandler(getProductReviews));
 
-// AI Assistant
 userRouter.post("/ai/query", errorHandler(handleChat));
 userRouter.post("/ai/identify-vehicle", errorHandler(identifyVehicle));
+
+userRouter.get("/yelp/businesses/search", errorHandler(searchBusinesses));
+userRouter.get("/yelp/businesses/:id", errorHandler(getBusinessDetails));
 
 export default userRouter;

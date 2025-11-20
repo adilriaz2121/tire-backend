@@ -14,6 +14,7 @@
     "init-admin": "node ./scripts/init-admin.js"
   },
   "dependencies": {
+    "@api/yelp-developers": "file:.api/apis/yelp-developers",
     "@prisma/client": "^6.9.0",
     "axios": "^1.7.2",
     "bcrypt": "^6.0.0",
