@@ -12,8 +12,8 @@ export const searchBusinesses = async (req, res, next) => {
     }
 
     const {
-      latitude = -33.8688,
-      longitude = 151.2093,
+      latitude = 40.7128,
+      longitude = -74.0060,
       limit = 20,
       sort_by = 'best_match',
       term = 'mobile tire installers',
@@ -26,15 +26,15 @@ export const searchBusinesses = async (req, res, next) => {
 
     const params = new URLSearchParams();
     
-    // if (location) {
-    //   params.append('location', location);
-    // } else {
-    //   params.append('latitude', latitude.toString());
-    //   params.append('longitude', longitude.toString());
-    params.append('latitude', 40.7128.toString());
-    params.append('longitude', (-74.0060).toString());
+    if (location) {
+      params.append('location', location);
+    } else {
+      params.append('latitude', latitude.toString());
+      params.append('longitude', longitude.toString());
+    // params.append('latitude', 40.7128.toString());
+    // params.append('longitude', (-74.0060).toString());
     
-    // }
+    }
     
     params.append('term', term);
     params.append('limit', Math.min(parseInt(limit) || 20, 50).toString()); // Max 50 per Yelp API
