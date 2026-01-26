@@ -5,6 +5,11 @@ import { Readable } from 'stream';
 
 const prisma = new PrismaClient();
 
+function isUuid(value) {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export const getStockMatchedProducts = async (req, res, next) => {
   try {
     const page = Math.max(parseInt(req.query.page || '1', 10), 1);
@@ -250,6 +255,110 @@ export const getStockMatchedProducts = async (req, res, next) => {
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// Product details by canonical Products.id (joins productDetail, Stock, and Reviews)
+export const getProductDetailsById = async (req, res, next) => {
+  try {
+    const id = (req.params.id || '').toString().trim();
+    if (!isUuid(id)) return res.status(400).json({ error: 'Invalid product id' });
+
+    const product = await prisma.products.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        make: true,
+        model: true,
+        year: true,
+        trim: true,
+        size: true,
+        mfg: true,
+        createdAt: true,
+      },
+    });
+
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product.size || !product.mfg) return res.status(404).json({ error: 'Product has no size/mfg' });
+
+    const pd = await prisma.productDetail.findFirst({
+      where: {
+        size: { equals: product.size, mode: 'insensitive' },
+        brand: { equals: product.mfg, mode: 'insensitive' },
+      },
+    });
+
+    if (!pd) {
+      return res.status(404).json({ error: 'Product details not found for this fitment' });
+    }
+
+    const stockAggRows = await prisma.$queryRaw(
+      Prisma.sql`
+        SELECT
+          (ARRAY_AGG(s."id" ORDER BY s."price" ASC))[1] AS "stockId",
+          MIN(s."price")::float8 AS "stockPrice",
+          SUM(s."quantity")::int AS "stockQuantity"
+        FROM "Stock" s
+        WHERE lower(s."size") = lower(${product.size})
+          AND lower(s."mfg") = lower(${product.mfg})
+      `,
+    );
+    const stockAgg = Array.isArray(stockAggRows) ? stockAggRows[0] : null;
+
+    // Reviews are keyed by size + brand (not by Products.id)
+    const reviewBrand = (pd.brand || product.mfg || '').toString();
+    const reviewSize = (pd.size || product.size || '').toString();
+
+    // Only return overall review rating in this endpoint.
+    // Full reviews + stats are fetched via GET /api/user/products/:productId/reviews
+    const reviewSummaryRows = await prisma.$queryRaw(
+      Prisma.sql`
+        WITH scored AS (
+          SELECT
+            LEAST(
+              5,
+              GREATEST(
+                1,
+                ROUND(
+                  (
+                    COALESCE(r."Dry", 0)
+                    + COALESCE(r."Wet", 0)
+                    + COALESCE(r."Winter", 0)
+                    + COALESCE(r."Comfort", 0)
+                    + COALESCE(r."Noise", 0)
+                    + COALESCE(r."Treadwear", 0)
+                  ) / 6.0
+                )::int
+              )
+            ) AS star
+          FROM "Reviews" r
+          WHERE lower(r."brand") = lower(${reviewBrand})
+            AND lower(r."size") = lower(${reviewSize})
+        )
+        SELECT
+          COUNT(*)::int AS "total",
+          AVG(star::float8)::float8 AS "avg"
+        FROM scored
+      `,
+    );
+    const rs = Array.isArray(reviewSummaryRows) ? reviewSummaryRows[0] : null;
+    const totalReviews = rs?.total ? Number(rs.total) : 0;
+    const avg = rs?.avg ? Number(rs.avg) : 0;
+
+    return res.status(200).json({
+      product: {
+        ...product,
+        productDetail: pd,
+        stock: {
+          stockId: stockAgg?.stockId || null,
+          stockPrice: stockAgg?.stockPrice ?? null,
+          stockQuantity: stockAgg?.stockQuantity ?? null,
+        },
+      },
+      reviews: { meta: { total: totalReviews, averageRating: avg } },
     });
   } catch (error) {
     return next(error);
