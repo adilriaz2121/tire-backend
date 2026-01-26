@@ -12,6 +12,9 @@ export const getStockMatchedProducts = async (req, res, next) => {
     const q = (req.query.q || req.query.search || '').toString().trim();
     const brandParam = (req.query.brand || '').toString().trim();
     const sizeParam = (req.query.size || '').toString().trim();
+    const vehicleMakeParam = (req.query.make || '').toString().trim();
+    const vehicleModelParam = (req.query.model || '').toString().trim();
+    const vehicleYearParam = (req.query.year || '').toString().trim();
     const speedParam = (req.query.speedRating || req.query.speed_rating || '').toString().trim();
     const loadRangeParam = (req.query.loadRange || req.query.load_range || '').toString().trim();
     const rimSizeParam = (req.query.rimSize || req.query.rim_size || '').toString().trim();
@@ -69,6 +72,18 @@ export const getStockMatchedProducts = async (req, res, next) => {
         )})`
       : Prisma.sql``;
 
+    const vehicleMakeSql = vehicleMakeParam
+      ? Prisma.sql`AND lower(p."make") = ${vehicleMakeParam.toLowerCase()}`
+      : Prisma.sql``;
+
+    const vehicleModelSql = vehicleModelParam
+      ? Prisma.sql`AND lower(p."model") = ${vehicleModelParam.toLowerCase()}`
+      : Prisma.sql``;
+
+    const vehicleYearSql = vehicleYearParam
+      ? Prisma.sql`AND p."year" = ${vehicleYearParam}`
+      : Prisma.sql``;
+
     const speedSql = speedRatings.length
       ? Prisma.sql`AND lower(COALESCE(pd."speed_rating", '')) IN (${Prisma.join(
           speedRatings.map(s => Prisma.sql`${s.toLowerCase()}`),
@@ -113,21 +128,27 @@ export const getStockMatchedProducts = async (req, res, next) => {
         : sort === 'price_desc'
           ? Prisma.sql`ORDER BY MIN(s."price") DESC`
           : sort === 'oldest'
-            ? Prisma.sql`ORDER BY pd."createdAt" ASC`
-            : Prisma.sql`ORDER BY pd."createdAt" DESC`;
+            ? Prisma.sql`ORDER BY p."createdAt" ASC`
+            : Prisma.sql`ORDER BY p."createdAt" DESC`;
 
     // Count total matched (respecting HAVING by using a subquery)
     const totalRows = await prisma.$queryRaw(
       Prisma.sql`
         SELECT COUNT(*)::int AS total
         FROM (
-          SELECT pd."id"
-          FROM "productDetail" pd
+          SELECT p."id"
+          FROM "Products" p
+          JOIN "productDetail" pd
+            ON lower(pd."size") = lower(p."size")
+           AND lower(COALESCE(pd."brand", '')) = lower(p."mfg")
           JOIN "Stock" s
-            ON lower(pd."size") = lower(s."size")
-           AND lower(COALESCE(pd."brand", '')) = lower(s."mfg")
-          WHERE pd."brand" IS NOT NULL
-            AND pd."size" IS NOT NULL
+            ON lower(p."size") = lower(s."size")
+           AND lower(p."mfg") = lower(s."mfg")
+          WHERE p."mfg" IS NOT NULL
+            AND p."size" IS NOT NULL
+            ${vehicleMakeSql}
+            ${vehicleModelSql}
+            ${vehicleYearSql}
             ${searchSql}
             ${brandSql}
             ${sizeSql}
@@ -136,7 +157,7 @@ export const getStockMatchedProducts = async (req, res, next) => {
             ${rimSizeSql}
             ${originSql}
             ${utqgSql}
-          GROUP BY pd."id"
+          GROUP BY p."id"
           ${havingSql}
         ) matched
       `,
@@ -165,21 +186,34 @@ export const getStockMatchedProducts = async (req, res, next) => {
         )
         SELECT
           pd.*,
+          pd."id" AS "productDetailId",
           (ARRAY_AGG(s."id" ORDER BY s."price" ASC))[1] AS "stockId",
           MIN(s."price")::float8 AS "stockPrice",
           SUM(s."quantity")::int AS "stockQuantity",
           COALESCE(ra."reviewCount", 0)::int AS "reviewCount",
           COALESCE(ra."reviewAvgRaw", 0)::float8 AS "reviewAvgRaw",
-          COALESCE(ra."buyAgainYes", 0)::int AS "buyAgainYes"
-        FROM "productDetail" pd
+          COALESCE(ra."buyAgainYes", 0)::int AS "buyAgainYes",
+          p."id" AS "id",
+          p."make" AS "vehicleMake",
+          p."model" AS "vehicleModel",
+          p."year" AS "vehicleYear",
+          p."trim" AS "vehicleTrim",
+          p."mfg" AS "vehicleMfg"
+        FROM "Products" p
+        JOIN "productDetail" pd
+          ON lower(pd."size") = lower(p."size")
+         AND lower(COALESCE(pd."brand", '')) = lower(p."mfg")
         JOIN "Stock" s
-          ON lower(pd."size") = lower(s."size")
-         AND lower(COALESCE(pd."brand", '')) = lower(s."mfg")
+          ON lower(p."size") = lower(s."size")
+         AND lower(p."mfg") = lower(s."mfg")
         LEFT JOIN review_agg ra
           ON ra.brand_l = lower(COALESCE(pd."brand", ''))
          AND ra.size_l = lower(COALESCE(pd."size", ''))
-        WHERE pd."brand" IS NOT NULL
-          AND pd."size" IS NOT NULL
+        WHERE p."mfg" IS NOT NULL
+          AND p."size" IS NOT NULL
+          ${vehicleMakeSql}
+          ${vehicleModelSql}
+          ${vehicleYearSql}
           ${searchSql}
           ${brandSql}
           ${sizeSql}
@@ -188,7 +222,7 @@ export const getStockMatchedProducts = async (req, res, next) => {
           ${rimSizeSql}
           ${originSql}
           ${utqgSql}
-        GROUP BY pd."id", ra."reviewCount", ra."reviewAvgRaw", ra."buyAgainYes"
+        GROUP BY pd."id", p."id", ra."reviewCount", ra."reviewAvgRaw", ra."buyAgainYes"
         ${havingSql}
         ${orderSql}
         LIMIT ${limit} OFFSET ${offset}

@@ -122,13 +122,13 @@ async function searchTires(params) {
       : null;
 
     const sizesSql = candidateSizes.length
-      ? Prisma.sql`AND lower(pd."size") IN (${Prisma.join(
+      ? Prisma.sql`AND lower(p."size") IN (${Prisma.join(
           candidateSizes.map((s) => Prisma.sql`${s.toLowerCase()}`),
         )})`
       : Prisma.sql``;
 
     const brandSql = params.mfg
-      ? Prisma.sql`AND lower(COALESCE(pd."brand", '')) LIKE ${`%${String(params.mfg).toLowerCase()}%`}`
+      ? Prisma.sql`AND lower(p."mfg") LIKE ${`%${String(params.mfg).toLowerCase()}%`}`
       : Prisma.sql``;
 
     const havingSql =
@@ -143,18 +143,27 @@ async function searchTires(params) {
       Prisma.sql`
         SELECT
           pd.*,
+          pd."id" AS "productDetailId",
           (ARRAY_AGG(s."id" ORDER BY s."price" ASC))[1] AS "stockId",
           MIN(s."price")::float8 AS "stockPrice",
-          SUM(s."quantity")::int AS "stockQuantity"
-        FROM "productDetail" pd
+          SUM(s."quantity")::int AS "stockQuantity",
+          p."id" AS "id"
+        FROM "Products" p
+        JOIN "productDetail" pd
+          ON lower(pd."size") = lower(p."size")
+         AND lower(COALESCE(pd."brand", '')) = lower(p."mfg")
         JOIN "Stock" s
-          ON lower(pd."size") = lower(s."size")
-         AND lower(COALESCE(pd."brand", '')) = lower(s."mfg")
-        WHERE pd."brand" IS NOT NULL
-          AND pd."size" IS NOT NULL
+          ON lower(p."size") = lower(s."size")
+         AND lower(p."mfg") = lower(s."mfg")
+        WHERE p."mfg" IS NOT NULL
+          AND p."size" IS NOT NULL
           ${sizesSql}
           ${brandSql}
-        GROUP BY pd."id"
+          ${params.make ? Prisma.sql`AND lower(p."make") LIKE ${`%${String(params.make).toLowerCase()}%`}` : Prisma.sql``}
+          ${params.model ? Prisma.sql`AND lower(p."model") LIKE ${`%${String(params.model).toLowerCase()}%`}` : Prisma.sql``}
+          ${params.year ? Prisma.sql`AND p."year" = ${String(params.year)}` : Prisma.sql``}
+          ${params.trim ? Prisma.sql`AND lower(p."trim") LIKE ${`%${String(params.trim).toLowerCase()}%`}` : Prisma.sql``}
+        GROUP BY pd."id", p."id"
         ${havingSql}
         ORDER BY MIN(s."price") ASC
         LIMIT ${limit}
@@ -176,9 +185,9 @@ async function searchTires(params) {
         const qtyNum = Number(p?.stockQuantity);
         const img = Array.isArray(p?.images) && p.images.length ? p.images[0] : (p?.thumbnail_image || null);
         return {
-          // Use stockId if present for "buy" flows
-          id: (p?.stockId || p?.id || "").toString(),
-          product_detail_id: (p?.id || "").toString(),
+          // Always use Product.id for detail page routing
+          id: (p?.id || "").toString(),
+          product_detail_id: (p?.productDetailId || "").toString(),
           stock_id: (p?.stockId || "").toString(),
           name: `${brand} ${model}`.trim() || "Tire Product",
           tire_size: size,
@@ -210,43 +219,28 @@ async function getProductDetails(params) {
     const id = (params.product_id || "").toString().trim();
     if (!id) return { success: false, error: "Product not found" };
 
-    // Accept either a Stock.id or a productDetail.id
-    const stock = await prisma.stock.findUnique({ where: { id } }).catch(() => null);
+    // Product detail route uses Products.id as primary key
+    const product = await prisma.products.findUnique({ where: { id } }).catch(() => null);
+    if (!product) return { success: false, error: "Product not found" };
 
-    let pd = null;
-    let stockId = null;
-    let stockPrice = null;
-    let stockQuantity = null;
-
-    if (stock) {
-      stockId = stock.id;
-      stockPrice = stock.price;
-      stockQuantity = stock.quantity;
-
-      pd = await prisma.productDetail.findFirst({
-        where: {
-          size: stock.size,
-          brand: { equals: stock.mfg, mode: "insensitive" },
-        },
-      });
-    } else {
-      pd = await prisma.productDetail.findUnique({ where: { id } }).catch(() => null);
-      if (pd) {
-        // Pick cheapest stock for this product detail (brand+size)
-        const cheapest = await prisma.stock.findFirst({
-          where: {
-            size: pd.size,
-            mfg: { equals: (pd.brand || "").toString(), mode: "insensitive" },
-          },
-          orderBy: { price: "asc" },
-        });
-        stockId = cheapest?.id || null;
-        stockPrice = cheapest?.price ?? null;
-        stockQuantity = cheapest?.quantity ?? null;
-      }
-    }
-
+    const pd = await prisma.productDetail.findFirst({
+      where: {
+        size: product.size,
+        brand: { equals: product.mfg, mode: "insensitive" },
+      },
+    });
     if (!pd) return { success: false, error: "Product not found" };
+
+    const cheapest = await prisma.stock.findFirst({
+      where: {
+        size: product.size,
+        mfg: { equals: product.mfg, mode: "insensitive" },
+      },
+      orderBy: { price: "asc" },
+    });
+    const stockId = cheapest?.id || null;
+    const stockPrice = cheapest?.price ?? null;
+    const stockQuantity = cheapest?.quantity ?? null;
 
     const reviews = await prisma.reviews.findMany({
       where: {
@@ -260,7 +254,7 @@ async function getProductDetails(params) {
     return {
       success: true,
       product: {
-        id: (stockId || pd.id).toString(),
+        id: (product.id || "").toString(),
         product_detail_id: (pd.id || "").toString(),
         stock_id: stockId ? String(stockId) : null,
         tire_size: pd.size,
