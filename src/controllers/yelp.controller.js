@@ -29,8 +29,16 @@ export const searchBusinesses = async (req, res, next) => {
     if (location) {
       params.append('location', location);
     } else {
-      params.append('latitude', latitude.toString());
-      params.append('longitude', longitude.toString());
+      const latNum = Number(latitude);
+      const lngNum = Number(longitude);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid latitude/longitude'
+        });
+      }
+      params.append('latitude', String(latNum));
+      params.append('longitude', String(lngNum));
     // params.append('latitude', 40.7128.toString());
     // params.append('longitude', (-74.0060).toString());
     
@@ -40,7 +48,13 @@ export const searchBusinesses = async (req, res, next) => {
     params.append('limit', Math.min(parseInt(limit) || 20, 50).toString()); // Max 50 per Yelp API
     params.append('sort_by', sort_by);
     
-    if (radius) params.append('radius', radius.toString());
+    if (radius) {
+      const rNum = Number(radius);
+      if (Number.isFinite(rNum) && rNum > 0) {
+        // Yelp radius max is 40000 meters
+        params.append('radius', String(Math.min(Math.floor(rNum), 40000)));
+      }
+    }
     if (price) params.append('price', price.toString());
     if (open_now === 'true' || open_now === true) params.append('open_now', 'true');
     if (attributes) params.append('attributes', attributes);
@@ -57,9 +71,28 @@ export const searchBusinesses = async (req, res, next) => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      const description = errorData.error?.description || `Yelp API error: ${response.statusText}`;
+      const code = errorData.error?.code;
+
+      // Yelp often returns 400 for unsupported coordinates / validation issues.
+      // Treat these as "no results" so the frontend can show the empty-state UI.
+      if (response.status === 400) {
+        return res.status(200).json({
+          success: true,
+          warning: description,
+          warning_code: code,
+          data: {
+            businesses: [],
+            total: 0,
+            region: {}
+          }
+        });
+      }
+
       return res.status(response.status).json({
         success: false,
-        error: errorData.error?.description || `Yelp API error: ${response.statusText}`,
+        error: description,
+        code,
         status: response.status
       });
     }

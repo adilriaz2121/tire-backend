@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -12,13 +12,8 @@ enum Role {
   admin
 }
 
-enum DiscountType {
-  percentage
-  fixed
-}
-
 model User {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
   email     String   @unique
   password  String?
   name      String?
@@ -28,7 +23,7 @@ model User {
 }
 
 model Articles {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
   title     String
   detail    String
   content   String
@@ -37,100 +32,68 @@ model Articles {
   updatedAt DateTime @updatedAt
 }
 
-model company {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model products {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+model Products {
+  id          String @id @default(uuid())
   make        String
   model       String
   year        String
   trim        String
   size        String
   mfg         String
-  item        String
-  detail      String
   description String
-  quantity    Int
-  images      String[]
-  price       Float
-  reviews     Reviews[]
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
+  detail      String
 
-model Contact {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  email     String
-  phone     String
-  subject   String
-  isRead    String
-  message   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-enum OrderStatus {
-  pending
-  shipped
-  delivered
-  cancelled
+model productDetail {
+  id                     String   @id @default(uuid())
+  brand                  String?
+  model                  String?
+  name                   String?
+  loadRange              String?
+  utqg                   String?
+  sidewall               String?
+  section_width          String?
+  aspect_ratio           String?
+  rim_size               String?
+  inch_width             String?
+  diameter               String?
+  overall_diameter       String?
+  load_rating            String?
+  speed_rating           String?
+  load_capacity_single   String?
+  max_inflation_pressure String?
+  measuring_rim_width    String?
+  approved_rim_width_max String?
+  approved_rim_width_min String?
+  revolutions_per_mile   String?
+  weight                 String?
+  origin                 String?
+  thumbnail_image        String
+  images                 String[]
+  features               String?
+  benefits               String?
+  description            String?
+  tags                   String?
+  rim_protector          String?
+  size                   String
+  tread_depth            String?
+  overall_width          String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
-model order {
-  id              String      @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  email           String
-  phone           String
-  totalAmount     Float
-  productIds      String[]
-  address         String
-  city            String
-  state           String?
-  zip             String?
-  country         String
-  total           Float
-  status          OrderStatus @default(pending)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  // New fields for Stripe and structured payloads
-  paymentIntentId String?     @unique
-  currency        String?     @default("usd")
-  userInfo        Json?
-  shippingInfo    Json?
-  pricingInfo     Json?
-  productInfo     Json?
-}
-
-model Reviews {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  name       String
-  country    String?
-  review     String
-  rating     Int
-  isApproved Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  products   products? @relation(fields: [productsId], references: [id])
-  productsId String?   @db.ObjectId
-}
-
-model coupons {
-  id           String       @id @default(auto()) @map("_id") @db.ObjectId
-  code         String
-  discountType DiscountType @default(percentage)
-  discount     Float
-  validFrom    DateTime?
-  validTo      DateTime?
-  maxUse       Int?
-  usedCount    Int          @default(0)
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+model Stock {
+  id          String   @id @default(uuid())
+  mfg         String
+  item        String
+  size        String
+  price       Float
+  description String
+  quantity    Int
+  fet         String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

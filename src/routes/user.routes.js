@@ -1,8 +1,8 @@
 import express from "express";
 import { errorHandler } from "../handlers/error.handlers.js";
 import { getAllArticles, getArticleDetail } from "../controllers/articles.controller.js";
-import { getAllProducts, getProduct } from "../controllers/products.controller.js";
 import { getFitment, getFilteredProducts, getSizeOptions } from "../controllers/fitment.controller.js";
+import { getStockMatchedProducts } from "../controllers/products.controller.js";
 import { createPaymentIntent, stripeWebhook } from "../controllers/payments.controller.js";
 import { applyCoupon, validateCoupon } from "../controllers/coupon-apply.controller.js";
 import { createContact } from "../controllers/contact.controller.js";
@@ -15,9 +15,8 @@ const userRouter = express.Router();
 userRouter.get("/articles", errorHandler(getAllArticles));
 userRouter.get("/articles/:id", errorHandler(getArticleDetail));
 
-userRouter.get("/products", errorHandler(getAllProducts));
 userRouter.get("/products/filter", errorHandler(getFilteredProducts));
-userRouter.get("/products/:id", errorHandler(getProduct));
+userRouter.get("/products/stocked", errorHandler(getStockMatchedProducts));
 userRouter.get("/fitment", errorHandler(getFitment));
 userRouter.get("/sizes", errorHandler(getSizeOptions));
 

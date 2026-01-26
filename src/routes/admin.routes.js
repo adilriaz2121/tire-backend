@@ -4,7 +4,6 @@ import { authGuard } from "../middlewares/auth.middleware.js";
 import { signAdminIn, uploadImage } from "../controllers/admin.controller.js";
 import { createArticle, updateArticle, deleteArticle } from "../controllers/articles.controller.js";
 import { createCoupon, listCoupons, getCoupon, updateCoupon, deleteCoupon, setCouponActive, incrementCouponUsage } from "../controllers/coupons.controller.js";
-import { createProduct, getAllProducts, getProduct, updateProduct, deleteProduct, toggleProductActive, bulkUploadProducts } from "../controllers/products.controller.js";
 import { getAllContacts, getContactById, markContactAsRead, markAllContactsAsRead, deleteContact, deleteMultipleContacts, getContactStats } from "../controllers/contact.controller.js";
 import { getAllReviews, getReview, updateReview, deleteReview } from "../controllers/reviews.controller.js";
 import multer from "multer";
@@ -34,15 +33,6 @@ adminAuthRouter.put("/coupons/:id", authGuard('admin'), errorHandler(updateCoupo
 adminAuthRouter.delete("/coupons/:id", authGuard('admin'), errorHandler(deleteCoupon));
 adminAuthRouter.patch("/coupons/:id/active", authGuard('admin'), errorHandler(setCouponActive));
 adminAuthRouter.post("/coupons/:id/increment", authGuard('admin'), errorHandler(incrementCouponUsage));
-
-// Products
-adminAuthRouter.post("/products", authGuard('admin'), errorHandler(createProduct));
-adminAuthRouter.get("/products", authGuard('admin'), errorHandler(getAllProducts));
-adminAuthRouter.get("/products/:id", authGuard('admin'), errorHandler(getProduct));
-adminAuthRouter.put("/products/:id", authGuard('admin'), errorHandler(updateProduct));
-adminAuthRouter.delete("/products/:id", authGuard('admin'), errorHandler(deleteProduct));
-adminAuthRouter.patch("/products/:id/toggle-active", authGuard('admin'), errorHandler(toggleProductActive));
-adminAuthRouter.post("/products/bulk-upload", authGuard('admin'), upload.single('file'), errorHandler(bulkUploadProducts));
 
 // Contacts
 adminAuthRouter.get("/contacts", authGuard('admin'), errorHandler(getAllContacts));
