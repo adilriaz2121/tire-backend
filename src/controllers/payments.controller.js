@@ -1,11 +1,7 @@
 import Stripe from 'stripe';
 import { sendOrderConfirmationEmail } from '../utils/email.service.js';
 
-// Required environment variables:
-// STRIPE_SECRET_KEY - Your Stripe secret key (sk_test_... or sk_live_...)
-// STRIPE_WEBHOOK_SECRET - Your Stripe webhook signing secret (whsec_...)
-// MAIL_USER - Gmail address for sending emails
-// MAIL_PASSWORD - Gmail app password for nodemailer
+
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 	apiVersion: '2024-06-20',
@@ -66,7 +62,7 @@ export const createPaymentIntent = async (req, res, next) => {
 		if (discountedPrice !== undefined) metadata.discountedPrice = String(discountedPrice);
 		if (shippingPrice !== undefined) metadata.shippingPrice = String(shippingPrice);
 		if (Array.isArray(productInfo) && productInfo.length > 0) {
-			try { metadata.products = productInfo.map(p => `${p.productId}:${p.quantity}`).join(','); } catch {}
+			try { metadata.products = productInfo.map(p => `${p.productId}:${p.quantity}`).join(','); } catch { }
 		}
 
 		// Validate required fields
@@ -131,14 +127,15 @@ export const stripeWebhook = async (req, res, next) => {
 		if (event.type === 'payment_intent.succeeded') {
 			const pi = event.data.object;
 			console.log('Payment succeeded:', pi.id);
-			
+
 			// Attempt to parse description back into structured payload
 			let expanded = {};
-			try { 
-				expanded = pi.description ? JSON.parse(pi.description) : {}; 
+			try {
+				expanded = pi.description ? JSON.parse(pi.description) : {};
 			} catch (error) {
 				console.error('Failed to parse payment intent description:', error);
 			}
+			console.log("🚀 ~ stripeWebhook ~ expanded:", expanded)
 
 			// Persist order using Prisma
 			// Import Prisma lazily to avoid circular deps; use dynamic import
@@ -162,6 +159,10 @@ export const stripeWebhook = async (req, res, next) => {
 			}
 
 			try {
+				// Extract discount and coupon code from pricing info
+				const discount = pricingInfo?.discount ? Number(pricingInfo.discount) : null;
+				const couponCode = pricingInfo?.couponCode ? String(pricingInfo.couponCode).trim().toUpperCase() : null;
+
 				// Create order with order items
 				const order = await prisma.orders.create({
 					data: {
@@ -175,6 +176,8 @@ export const stripeWebhook = async (req, res, next) => {
 						zip: String(shippingInfo.zip || ''),
 						country: String(shippingInfo.country || 'US'),
 						shippingLocation,
+						discount: discount && discount > 0 ? discount : null,
+						couponCode: couponCode || null,
 						orderItems: {
 							create: productInfo.map((p) => ({
 								productName: String(p.productName || p.name || p.title || ''),

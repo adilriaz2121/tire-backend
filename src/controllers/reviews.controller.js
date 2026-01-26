@@ -158,24 +158,76 @@ export const getReview = async (req, res, next) => {
 export const updateReview = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { name, country, review, rating } = req.body;
+        if (!isUuid(id)) {
+            return res.status(400).json({ error: 'Invalid review id' });
+        }
 
-        if (rating && (rating < 1 || rating > 5)) {
-            return res.status(400).json({ error: "Rating must be between 1 and 5" });
+        const body = req.body || {};
+        const updateData = {};
+
+        // Update allowed fields
+        if (body.name !== undefined) updateData.name = String(body.name).trim();
+        if (body.email !== undefined) updateData.email = String(body.email).trim().toLowerCase();
+        if (body.summary !== undefined) updateData.summary = body.summary ? String(body.summary).trim() : null;
+        if (body.additionalComments !== undefined) updateData.additionalComments = body.additionalComments ? String(body.additionalComments).trim() : null;
+        if (body.vehicle !== undefined) updateData.vehicle = String(body.vehicle).trim();
+        if (body.milesDriven !== undefined) updateData.milesDriven = String(body.milesDriven).trim();
+        if (body.drivingStyle !== undefined) updateData.drivingStyle = String(body.drivingStyle).trim();
+        if (body.wouldBuyAgain !== undefined) updateData.wouldBuyAgain = String(body.wouldBuyAgain).trim();
+
+        // Update ratings (1-5)
+        const clampStars = (n) => {
+            const v = Number(n);
+            if (!Number.isFinite(v)) return null;
+            const r = Math.round(v);
+            return Math.max(1, Math.min(5, r));
+        };
+
+        if (body.Dry !== undefined) {
+            const dry = clampStars(body.Dry);
+            if (dry === null) return res.status(400).json({ error: "Invalid Dry rating" });
+            updateData.Dry = dry;
+        }
+        if (body.Wet !== undefined) {
+            const wet = clampStars(body.Wet);
+            if (wet === null) return res.status(400).json({ error: "Invalid Wet rating" });
+            updateData.Wet = wet;
+        }
+        if (body.Winter !== undefined) {
+            const winter = clampStars(body.Winter);
+            if (winter === null) return res.status(400).json({ error: "Invalid Winter rating" });
+            updateData.Winter = winter;
+        }
+        if (body.Comfort !== undefined) {
+            const comfort = clampStars(body.Comfort);
+            if (comfort === null) return res.status(400).json({ error: "Invalid Comfort rating" });
+            updateData.Comfort = comfort;
+        }
+        if (body.Noise !== undefined) {
+            const noise = clampStars(body.Noise);
+            if (noise === null) return res.status(400).json({ error: "Invalid Noise rating" });
+            updateData.Noise = noise;
+        }
+        if (body.Treadwear !== undefined) {
+            const treadwear = clampStars(body.Treadwear);
+            if (treadwear === null) return res.status(400).json({ error: "Invalid Treadwear rating" });
+            updateData.Treadwear = treadwear;
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ error: "No valid fields to update" });
         }
 
         const reviewRecord = await prisma.reviews.update({
             where: { id },
-            data: {
-                name,
-                country,
-                review,
-                rating
-            }
+            data: updateData
         });
 
         return res.status(200).json({ review: reviewRecord });
     } catch (error) {
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Review not found' });
+        }
         return next(error);
     }
 };

@@ -10,8 +10,8 @@ ordersRouter.get("/", errorHandler(getAllOrders));
 // Get order by ID
 ordersRouter.get("/:id", errorHandler(getOrderById));
 
-// Update order status
-ordersRouter.patch("/:id/status", errorHandler(updateOrderStatus));
+// Update order (status and/or shippingLocation)
+ordersRouter.patch("/:id", errorHandler(updateOrderStatus));
 
 // Get order statistics
 ordersRouter.get("/stats/overview", errorHandler(getOrderStats));

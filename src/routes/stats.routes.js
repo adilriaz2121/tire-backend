@@ -11,7 +11,7 @@ import {
 const statsRouter = express.Router();
 
 // All stats routes require admin authentication
-statsRouter.get("/dashboard",  errorHandler(getDashboardData));
+statsRouter.get("/dashboard", authGuard('admin'), errorHandler(getDashboardData));
 statsRouter.get("/cards", authGuard('admin'), errorHandler(getAdminStats));
 statsRouter.get("/charts/products", authGuard('admin'), errorHandler(getProductsChartData));
 statsRouter.get("/charts/orders", authGuard('admin'), errorHandler(getOrdersChartData));
