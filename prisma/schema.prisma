@@ -52,9 +52,9 @@ model Contacts {
   name      String
   email     String
   phone     String
-  subject   String  
+  subject   String
   message   String
-  isRead    Boolean @default(false)
+  isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -131,4 +131,46 @@ model Stock {
   fet         String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Orders {
+  id               String           @id @default(uuid())
+  userName         String
+  email            String
+  phone            String
+  totalAmount      Float
+  address          String
+  city             String
+  state            String
+  zip              String
+  shippingLocation ShippingLocation @default(MobileInstaller)
+  country          String
+  orderItems       OrderItems[]
+}
+
+enum ShippingLocation {
+  MobileInstaller
+  LocalInstaller
+  ShipToMe
+  FedExPickup
+}
+
+model OrderItems {
+  id                 String   @id @default(uuid())
+  orderId            String
+  order              Orders   @relation(fields: [orderId], references: [id])
+  productName        String
+  productPrice       Float
+  productQuantity    Int
+  productTotal       Float
+  productImage       String
+  productBrand       String
+  productModel       String
+  productYear        String
+  productTrim        String
+  productSize        String
+  productMfg         String
+  productDescription String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }

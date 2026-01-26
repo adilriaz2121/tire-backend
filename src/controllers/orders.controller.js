@@ -2,21 +2,22 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+function isUuid(id) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || '').trim());
+}
+
 export const getAllOrders = async (req, res, next) => {
     try {
         const page = Math.max(parseInt(req.query.page || '1', 10), 1);
         const limit = Math.min(Math.max(parseInt(req.query.limit || '10', 10), 1), 100);
         
         // Filter parameters
-        const status = req.query.status?.toString().trim();
         const email = req.query.email?.toString().trim();
-        const name = req.query.name?.toString().trim();
-        const paymentIntentId = req.query.paymentIntentId?.toString().trim();
+        const userName = req.query.userName?.toString().trim();
+        const shippingLocation = req.query.shippingLocation?.toString().trim();
         const country = req.query.country?.toString().trim();
         const city = req.query.city?.toString().trim();
         const state = req.query.state?.toString().trim();
-        const dateFrom = req.query.dateFrom?.toString().trim();
-        const dateTo = req.query.dateTo?.toString().trim();
         const minAmount = req.query.minAmount ? parseFloat(req.query.minAmount) : null;
         const maxAmount = req.query.maxAmount ? parseFloat(req.query.maxAmount) : null;
         const search = req.query.search?.toString().trim();
@@ -24,24 +25,19 @@ export const getAllOrders = async (req, res, next) => {
         // Build where clause
         const where = {};
 
-        // Status filter
-        if (status && ['pending', 'shipped', 'delivered', 'cancelled'].includes(status)) {
-            where.status = status;
-        }
-
         // Email filter
         if (email) {
             where.email = { contains: email, mode: 'insensitive' };
         }
 
-        // Name filter
-        if (name) {
-            where.name = { contains: name, mode: 'insensitive' };
+        // User name filter
+        if (userName) {
+            where.userName = { contains: userName, mode: 'insensitive' };
         }
 
-        // Payment Intent ID filter
-        if (paymentIntentId) {
-            where.paymentIntentId = paymentIntentId;
+        // Shipping location filter
+        if (shippingLocation && ['MobileInstaller', 'LocalInstaller', 'ShipToMe', 'FedExPickup'].includes(shippingLocation)) {
+            where.shippingLocation = shippingLocation;
         }
 
         // Location filters
@@ -53,17 +49,6 @@ export const getAllOrders = async (req, res, next) => {
         }
         if (state) {
             where.state = { contains: state, mode: 'insensitive' };
-        }
-
-        // Date range filters
-        if (dateFrom || dateTo) {
-            where.createdAt = {};
-            if (dateFrom) {
-                where.createdAt.gte = new Date(dateFrom);
-            }
-            if (dateTo) {
-                where.createdAt.lte = new Date(dateTo);
-            }
         }
 
         // Amount range filters
@@ -80,48 +65,28 @@ export const getAllOrders = async (req, res, next) => {
         // Search filter (searches across multiple fields)
         if (search) {
             where.OR = [
-                { name: { contains: search, mode: 'insensitive' } },
+                { userName: { contains: search, mode: 'insensitive' } },
                 { email: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search, mode: 'insensitive' } },
                 { address: { contains: search, mode: 'insensitive' } },
                 { city: { contains: search, mode: 'insensitive' } },
                 { state: { contains: search, mode: 'insensitive' } },
                 { country: { contains: search, mode: 'insensitive' } },
-                { paymentIntentId: { contains: search, mode: 'insensitive' } }
+                { zip: { contains: search, mode: 'insensitive' } }
             ];
         }
 
         // Get total count for pagination
-        const total = await prisma.order.count({ where });
+        const total = await prisma.orders.count({ where });
 
         // Get orders with pagination
-        const orders = await prisma.order.findMany({
+        const orders = await prisma.orders.findMany({
             where,
-            orderBy: { createdAt: 'desc' },
+            orderBy: { id: 'desc' },
             skip: (page - 1) * limit,
             take: limit,
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                totalAmount: true,
-                productIds: true,
-                address: true,
-                city: true,
-                state: true,
-                zip: true,
-                country: true,
-                total: true,
-                status: true,
-                paymentIntentId: true,
-                currency: true,
-                userInfo: true,
-                shippingInfo: true,
-                pricingInfo: true,
-                productInfo: true,
-                createdAt: true,
-                updatedAt: true
+            include: {
+                orderItems: true
             }
         });
 
@@ -157,38 +122,18 @@ export const getOrderById = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Validate ObjectId format
-        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        // Validate UUID format
+        if (!isUuid(id)) {
             return res.status(400).json({ 
                 success: false,
                 error: 'Invalid order ID format' 
             });
         }
 
-        const order = await prisma.order.findUnique({
+        const order = await prisma.orders.findUnique({
             where: { id },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                totalAmount: true,
-                productIds: true,
-                address: true,
-                city: true,
-                state: true,
-                zip: true,
-                country: true,
-                total: true,
-                status: true,
-                paymentIntentId: true,
-                currency: true,
-                userInfo: true,
-                shippingInfo: true,
-                pricingInfo: true,
-                productInfo: true,
-                createdAt: true,
-                updatedAt: true
+            include: {
+                orderItems: true
             }
         });
 
@@ -213,39 +158,48 @@ export const getOrderById = async (req, res, next) => {
 export const updateOrderStatus = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { status } = req.body;
+        const { shippingLocation } = req.body;
 
-        // Validate ObjectId format
-        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        // Validate UUID format
+        if (!isUuid(id)) {
             return res.status(400).json({ 
                 success: false,
                 error: 'Invalid order ID format' 
             });
         }
 
-        // Validate status
-        if (!status || !['pending', 'shipped', 'delivered', 'cancelled'].includes(status)) {
+        // Validate shipping location
+        if (shippingLocation && !['MobileInstaller', 'LocalInstaller', 'ShipToMe', 'FedExPickup'].includes(shippingLocation)) {
             return res.status(400).json({
                 success: false,
-                error: 'Invalid status. Must be one of: pending, shipped, delivered, cancelled'
+                error: 'Invalid shippingLocation. Must be one of: MobileInstaller, LocalInstaller, ShipToMe, FedExPickup'
             });
         }
 
-        const order = await prisma.order.update({
+        const updateData = {};
+        if (shippingLocation) {
+            updateData.shippingLocation = shippingLocation;
+        }
+
+        // If no valid fields to update, return error
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No valid fields to update'
+            });
+        }
+
+        const order = await prisma.orders.update({
             where: { id },
-            data: { status },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                status: true,
-                updatedAt: true
+            data: updateData,
+            include: {
+                orderItems: true
             }
         });
 
         return res.status(200).json({
             success: true,
-            message: `Order status updated to ${status}`,
+            message: 'Order updated successfully',
             data: { order }
         });
 
@@ -256,14 +210,14 @@ export const updateOrderStatus = async (req, res, next) => {
                 error: 'Order not found'
             });
         }
-        console.error('Error updating order status:', error);
+        console.error('Error updating order:', error);
         return next(error);
     }
 };
 
 export const getOrderStats = async (req, res, next) => {
     try {
-        const stats = await prisma.order.aggregate({
+        const stats = await prisma.orders.aggregate({
             _count: {
                 id: true
             },
@@ -275,9 +229,9 @@ export const getOrderStats = async (req, res, next) => {
             }
         });
 
-        // Get status breakdown
-        const statusBreakdown = await prisma.order.groupBy({
-            by: ['status'],
+        // Get shipping location breakdown
+        const locationBreakdown = await prisma.orders.groupBy({
+            by: ['shippingLocation'],
             _count: {
                 id: true
             },
@@ -286,15 +240,13 @@ export const getOrderStats = async (req, res, next) => {
             }
         });
 
-        // Get recent orders count (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        const recentOrders = await prisma.order.count({
-            where: {
-                createdAt: {
-                    gte: thirtyDaysAgo
-                }
+        // Get total order items count
+        const totalOrderItems = await prisma.orderItems.aggregate({
+            _count: {
+                id: true
+            },
+            _sum: {
+                productQuantity: true
             }
         });
 
@@ -304,9 +256,10 @@ export const getOrderStats = async (req, res, next) => {
                 totalOrders: stats._count.id,
                 totalRevenue: stats._sum.totalAmount || 0,
                 averageOrderValue: stats._avg.totalAmount || 0,
-                recentOrders,
-                statusBreakdown: statusBreakdown.map(item => ({
-                    status: item.status,
+                totalOrderItems: totalOrderItems._count.id || 0,
+                totalProductsSold: totalOrderItems._sum.productQuantity || 0,
+                locationBreakdown: locationBreakdown.map(item => ({
+                    shippingLocation: item.shippingLocation,
                     count: item._count.id,
                     revenue: item._sum.totalAmount || 0
                 }))

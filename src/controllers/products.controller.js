@@ -365,3 +365,90 @@ export const getProductDetailsById = async (req, res, next) => {
   }
 };
 
+// Get cart products by product IDs
+export const getCartProducts = async (req, res, next) => {
+  try {
+    const idsParam = req.query.ids || req.query.id;
+    if (!idsParam) {
+      return res.status(400).json({ error: 'Missing product IDs' });
+    }
+
+    // Handle both single ID and comma-separated IDs
+    const ids = Array.isArray(idsParam)
+      ? idsParam
+      : typeof idsParam === 'string'
+        ? idsParam.split(',').map(s => s.trim()).filter(Boolean)
+        : [String(idsParam)];
+
+    // Validate UUIDs
+    const validIds = ids.filter(id => isUuid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ error: 'No valid product IDs provided' });
+    }
+
+    // Fetch products
+    const products = await prisma.products.findMany({
+      where: {
+        id: { in: validIds },
+      },
+      select: {
+        id: true,
+        size: true,
+        mfg: true,
+      },
+    });
+
+    if (products.length === 0) {
+      return res.status(200).json({ items: [] });
+    }
+
+    // Get product details for each product
+    const productDetails = await Promise.all(
+      products.map(async (product) => {
+        const pd = await prisma.productDetail.findFirst({
+          where: {
+            size: { equals: product.size, mode: 'insensitive' },
+            brand: { equals: product.mfg, mode: 'insensitive' },
+          },
+        });
+
+        if (!pd) return null;
+
+        // Get stock info
+        const stockAggRows = await prisma.$queryRaw(
+          Prisma.sql`
+            SELECT
+              (ARRAY_AGG(s."id" ORDER BY s."price" ASC))[1] AS "stockId",
+              MIN(s."price")::float8 AS "stockPrice",
+              SUM(s."quantity")::int AS "stockQuantity"
+            FROM "Stock" s
+            WHERE lower(s."size") = lower(${product.size})
+              AND lower(s."mfg") = lower(${product.mfg})
+          `,
+        );
+        const stockAgg = Array.isArray(stockAggRows) ? stockAggRows[0] : null;
+
+        return {
+          id: product.id,
+          productId: product.id,
+          brand: pd.brand || product.mfg || null,
+          model: pd.model || pd.name || null,
+          name: pd.name || null,
+          size: pd.size || product.size || null,
+          images: Array.isArray(pd.images) ? pd.images : [],
+          thumbnail_image: pd.thumbnail_image || null,
+          stockPrice: stockAgg?.stockPrice ?? null,
+          stockQuantity: stockAgg?.stockQuantity ?? null,
+          stockId: stockAgg?.stockId || null,
+        };
+      })
+    );
+
+    const items = productDetails.filter(Boolean);
+
+    return res.status(200).json({ items });
+  } catch (error) {
+    return next(error);
+  }
+};
+

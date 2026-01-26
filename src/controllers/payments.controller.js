@@ -1,8 +1,11 @@
 import Stripe from 'stripe';
+import { sendOrderConfirmationEmail } from '../utils/email.service.js';
 
 // Required environment variables:
 // STRIPE_SECRET_KEY - Your Stripe secret key (sk_test_... or sk_live_...)
 // STRIPE_WEBHOOK_SECRET - Your Stripe webhook signing secret (whsec_...)
+// MAIL_USER - Gmail address for sending emails
+// MAIL_PASSWORD - Gmail app password for nodemailer
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 	apiVersion: '2024-06-20',
@@ -147,33 +150,84 @@ export const stripeWebhook = async (req, res, next) => {
 			const pricingInfo = expanded.pricingInfo || {};
 			const productInfo = Array.isArray(expanded.productInfo) ? expanded.productInfo : [];
 
-			const productIds = productInfo.map(p => String(p.productId));
 			const totalAmount = Number(pi.amount_received) / 100;
 
+			// Map shipping location from metadata or default
+			let shippingLocation = 'MobileInstaller'; // default
+			if (shippingInfo?.shippingLocation) {
+				const loc = shippingInfo.shippingLocation;
+				if (['MobileInstaller', 'LocalInstaller', 'ShipToMe', 'FedExPickup'].includes(loc)) {
+					shippingLocation = loc;
+				}
+			}
+
 			try {
-				const order = await prisma.order.create({
+				// Create order with order items
+				const order = await prisma.orders.create({
 					data: {
-						name: String(userInfo.name || ''),
+						userName: String(userInfo.name || userInfo.userName || ''),
 						email: String(userInfo.email || ''),
 						phone: String(userInfo.phone || ''),
 						totalAmount,
-						productIds,
 						address: String(shippingInfo.address || ''),
 						city: String(shippingInfo.city || ''),
-						state: shippingInfo.state ? String(shippingInfo.state) : null,
-						zip: shippingInfo.zip ? String(shippingInfo.zip) : null,
-						country: String(shippingInfo.country || ''),
-						total: Number(pricingInfo.totalPrice ?? totalAmount),
-						status: 'pending',
-						paymentIntentId: pi.id,
-						currency: String(pi.currency || 'usd'),
-						userInfo,
-						shippingInfo,
-						pricingInfo,
-						productInfo
+						state: String(shippingInfo.state || ''),
+						zip: String(shippingInfo.zip || ''),
+						country: String(shippingInfo.country || 'US'),
+						shippingLocation,
+						orderItems: {
+							create: productInfo.map((p) => ({
+								productName: String(p.productName || p.name || p.title || ''),
+								productPrice: Number(p.price || p.productPrice || 0),
+								productQuantity: Number(p.quantity || 1),
+								productTotal: Number((p.price || p.productPrice || 0) * (p.quantity || 1)),
+								productImage: String(p.image || p.productImage || ''),
+								productBrand: String(p.brand || p.productBrand || ''),
+								productModel: String(p.model || p.productModel || ''),
+								productYear: String(p.year || p.productYear || ''),
+								productTrim: String(p.trim || p.productTrim || ''),
+								productSize: String(p.size || p.productSize || ''),
+								productMfg: String(p.mfg || p.productMfg || p.brand || ''),
+								productDescription: String(p.description || p.productDescription || '')
+							}))
+						}
+					},
+					include: {
+						orderItems: true
 					}
 				});
 				console.log('Order created successfully:', order.id);
+
+				// Send order confirmation email with receipt
+				if (userInfo.email) {
+					try {
+						const emailResult = await sendOrderConfirmationEmail({
+							to: userInfo.email,
+							customerName: userInfo.name || userInfo.userName || 'Valued Customer',
+							orderId: order.id,
+							paymentIntentId: pi.id,
+							totalAmount,
+							orderItems: order.orderItems,
+							shippingInfo: {
+								address: shippingInfo.address,
+								city: shippingInfo.city,
+								state: shippingInfo.state,
+								zip: shippingInfo.zip,
+								country: shippingInfo.country || 'US',
+							},
+						});
+
+						if (emailResult.success) {
+							console.log('Order confirmation email sent successfully:', emailResult.messageId);
+						} else {
+							console.error('Failed to send order confirmation email:', emailResult.error);
+							// Don't fail the webhook if email fails, just log it
+						}
+					} catch (emailError) {
+						console.error('Error sending order confirmation email:', emailError);
+						// Don't fail the webhook if email fails, just log it
+					}
+				}
 			} catch (dbError) {
 				console.error('Failed to create order:', dbError);
 				return res.status(500).json({ error: 'Failed to create order' });
