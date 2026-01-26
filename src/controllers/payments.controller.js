@@ -54,12 +54,16 @@ export const createPaymentIntent = async (req, res, next) => {
 		const isCouponApplied = Boolean(pricingInfo?.isCouponApplied);
 		const totalPrice = pricingInfo?.totalPrice;
 		const discountedPrice = pricingInfo?.discountedPrice;
+		const discount = pricingInfo?.discount;
+		const couponCode = pricingInfo?.couponCode;
 		const shippingPrice = pricingInfo?.shippingPrice;
 
 		const metadata = {};
 		metadata.isCouponApplied = String(isCouponApplied);
 		if (totalPrice !== undefined) metadata.totalPrice = String(totalPrice);
 		if (discountedPrice !== undefined) metadata.discountedPrice = String(discountedPrice);
+		if (discount !== undefined) metadata.discount = String(discount);
+		if (couponCode) metadata.couponCode = String(couponCode);
 		if (shippingPrice !== undefined) metadata.shippingPrice = String(shippingPrice);
 		if (Array.isArray(productInfo) && productInfo.length > 0) {
 			try { metadata.products = productInfo.map(p => `${p.productId}:${p.quantity}`).join(','); } catch { }
@@ -162,6 +166,22 @@ export const stripeWebhook = async (req, res, next) => {
 				// Extract discount and coupon code from pricing info
 				const discount = pricingInfo?.discount ? Number(pricingInfo.discount) : null;
 				const couponCode = pricingInfo?.couponCode ? String(pricingInfo.couponCode).trim().toUpperCase() : null;
+
+				// Increment coupon usage count if coupon was applied
+				if (couponCode) {
+					try {
+						await prisma.coupons.updateMany({
+							where: { code: couponCode },
+							data: {
+								usedCount: { increment: 1 }
+							}
+						});
+						console.log(`Coupon ${couponCode} usage count incremented`);
+					} catch (couponError) {
+						console.error('Failed to increment coupon usage count:', couponError);
+						// Don't fail the order creation if coupon update fails
+					}
+				}
 
 				// Create order with order items
 				const order = await prisma.orders.create({
