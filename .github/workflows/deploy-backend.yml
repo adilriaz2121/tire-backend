@@ -8,17 +8,43 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Clean runner space
+        run: |
+          df -h
+          sudo apt-get clean
+          sudo rm -rf /tmp/* /var/tmp/*
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create .env file
+        run: |
+          echo "${{ secrets.SERVER_ENV }}" > .env
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: |
+          export NODE_OPTIONS="--max-old-space-size=4096"
+          npm run build || echo "No build step"
 
       - name: Ensure /var/www permissions on server
         uses: appleboy/ssh-action@v1.0.3
+        timeout-minutes: 5
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 30s
           script: |
             echo "🔧 Ensuring /var/www permissions..."
             sudo mkdir -p /var/www/tire-backend
@@ -27,36 +53,66 @@ jobs:
 
       - name: Sync Files via Rsync
         uses: burnett01/rsync-deployments@6.0.0
+        timeout-minutes: 10
         with:
-          switches: -avzr --delete --exclude '.git' --exclude 'node_modules'
+          switches: -avzr --delete --exclude '.git' --exclude 'node_modules' --exclude 'README.md' -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
           path: .
           remote_path: /var/www/tire-backend
           remote_host: ${{ secrets.SERVER_HOST }}
           remote_user: ${{ secrets.SERVER_USERNAME }}
           remote_key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          remote_port: ${{ secrets.SERVER_PORT || 22 }}
 
       - name: Deploy on Server
         uses: appleboy/ssh-action@v1.0.3
+        timeout-minutes: 15
+        env:
+          SERVER_ENV: ${{ secrets.SERVER_ENV }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 30s
+          command_timeout: 10m
+          envs: SERVER_ENV
           script: |
+            # Install Node.js if not installed
+            if ! command -v node >/dev/null 2>&1; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
             echo "🚀 Deploying backend..."
             cd /var/www/tire-backend
 
+            # Create .env file from secrets
+            echo "📝 Creating .env file..."
+            echo "$SERVER_ENV" > .env
+
             echo "📦 Installing dependencies..."
+            export NODE_OPTIONS="--max-old-space-size=2048"
             npm install --production
 
             echo "🔄 Running Prisma generate..."
             npx prisma generate || echo "No Prisma setup found"
 
-
-
             echo "🏗️ Building project..."
             npm run build || echo "No build step"
 
-            echo "🔁 Restarting with PM2..."
-            pm2 start npm --name "tire-backend" -- run start || pm2 restart tire-backend
+            # Stop existing PM2 process
+            echo "🛑 Stopping existing PM2 process..."
+            pm2 stop tire-backend || true
+            pm2 delete tire-backend || true
+
+            echo "🔁 Starting with PM2..."
+            pm2 start npm --name "tire-backend" -- run start
+
+            # Save PM2 configuration
+            pm2 save
+
+            # Setup PM2 startup (make PM2 run on reboot)
+            sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $USER --hp $HOME || true
 
             echo "✅ Backend deployment complete!"
+            pm2 list
