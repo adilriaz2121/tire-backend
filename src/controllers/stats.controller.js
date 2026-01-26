@@ -6,8 +6,8 @@ const prisma = new PrismaClient();
 export const getAdminStats = async (req, res, next) => {
     try {
         // Get total unread contacts
-        const totalUnreadContacts = await prisma.contact.count({
-            where: { isRead: 'false' }
+        const totalUnreadContacts = await prisma.contacts.count({
+            where: { isRead: false }
         });
 
         // Get total delivered orders
@@ -204,7 +204,7 @@ export const getDashboardData = async (req, res, next) => {
             totalOrders,
             orderStatusBreakdown
         ] = await Promise.all([
-            prisma.contact.count({ where: { isRead: 'false' } }),
+            prisma.contacts.count({ where: { isRead: false } }),
             prisma.order.count({ where: { status: 'delivered' } }),
             prisma.order.aggregate({
                 where: { status: 'delivered' },

@@ -2,16 +2,28 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+function isUuid(id) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || '').trim());
+}
+
+function parseIsRead(value) {
+    if (value === undefined || value === null) return undefined;
+    const v = String(value).trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return true;
+    if (v === 'false' || v === '0' || v === 'no') return false;
+    return undefined;
+}
+
 // User creates a contact message
 export const createContact = async (req, res, next) => {
     try {
         const { name, email, phone, subject, message } = req.body;
         
         // Validate required fields
-        if (!name || !email || !subject || !message) {
+        if (!name || !email || !phone || !subject || !message) {
             return res.status(400).json({
                 success: false,
-                error: 'Name, email, subject, and message are required'
+                error: 'Name, email, phone, subject, and message are required'
             });
         }
 
@@ -25,21 +37,23 @@ export const createContact = async (req, res, next) => {
         }
 
         // Validate phone format (basic validation)
-        if (phone && phone.length < 10) {
+        const phoneStr = String(phone || '').trim();
+        if (phoneStr.length < 10) {
             return res.status(400).json({
                 success: false,
                 error: 'Please provide a valid phone number'
             });
         }
 
-        const contact = await prisma.contact.create({
+        const contact = await prisma.contacts.create({
             data: {
-                name: name.trim(),
-                email: email.trim().toLowerCase(),
-                phone: phone ? phone.trim() : '',
-                subject: subject.trim(),
-                message: message.trim(),
-                isRead: 'false'
+                name: String(name).trim(),
+                email: String(email).trim().toLowerCase(),
+                phone: phoneStr,
+                subject: String(subject).trim(),
+                message: String(message).trim(),
+                // schema default is false; keep explicit for clarity
+                isRead: false
             },
             select: {
                 id: true,
@@ -72,7 +86,7 @@ export const getAllContacts = async (req, res, next) => {
         const limit = Math.min(Math.max(parseInt(req.query.limit || '10', 10), 1), 100);
         
         // Filter parameters
-        const isRead = req.query.isRead?.toString().trim();
+        const isRead = parseIsRead(req.query.isRead);
         const email = req.query.email?.toString().trim();
         const name = req.query.name?.toString().trim();
         const subject = req.query.subject?.toString().trim();
@@ -84,7 +98,7 @@ export const getAllContacts = async (req, res, next) => {
         const where = {};
 
         // Read status filter
-        if (isRead && ['true', 'false'].includes(isRead)) {
+        if (typeof isRead === 'boolean') {
             where.isRead = isRead;
         }
 
@@ -125,10 +139,10 @@ export const getAllContacts = async (req, res, next) => {
         }
 
         // Get total count for pagination
-        const total = await prisma.contact.count({ where });
+        const total = await prisma.contacts.count({ where });
 
         // Get contacts with pagination
-        const contacts = await prisma.contact.findMany({
+        const contacts = await prisma.contacts.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
                 skip: (page - 1) * limit,
@@ -179,15 +193,15 @@ export const getContactById = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Validate ObjectId format
-        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        // Validate UUID format
+        if (!isUuid(id)) {
             return res.status(400).json({ 
                 success: false,
                 error: 'Invalid contact ID format' 
             });
         }
 
-        const contact = await prisma.contact.findUnique({
+        const contact = await prisma.contacts.findUnique({
             where: { id },
             select: {
                 id: true,
@@ -225,17 +239,17 @@ export const markContactAsRead = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Validate ObjectId format
-        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        // Validate UUID format
+        if (!isUuid(id)) {
             return res.status(400).json({ 
                 success: false,
                 error: 'Invalid contact ID format' 
             });
         }
 
-        const contact = await prisma.contact.update({
+        const contact = await prisma.contacts.update({
             where: { id },
-            data: { isRead: 'true' },
+            data: { isRead: true },
             select: {
                 id: true,
                 name: true,
@@ -267,9 +281,9 @@ export const markContactAsRead = async (req, res, next) => {
 // Admin marks all contacts as read
 export const markAllContactsAsRead = async (req, res, next) => {
     try {
-        const result = await prisma.contact.updateMany({
-            where: { isRead: 'false' },
-            data: { isRead: 'true' }
+        const result = await prisma.contacts.updateMany({
+            where: { isRead: false },
+            data: { isRead: true }
         });
 
         return res.status(200).json({
@@ -289,15 +303,15 @@ export const deleteContact = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Validate ObjectId format
-        if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        // Validate UUID format
+        if (!isUuid(id)) {
             return res.status(400).json({ 
                 success: false,
                 error: 'Invalid contact ID format' 
             });
         }
 
-        await prisma.contact.delete({
+        await prisma.contacts.delete({
             where: { id }
         });
 
@@ -331,7 +345,7 @@ export const deleteMultipleContacts = async (req, res, next) => {
         }
 
         // Validate all IDs
-        const invalidIds = contactIds.filter(id => !/^[a-fA-F0-9]{24}$/.test(id));
+        const invalidIds = contactIds.filter(id => !isUuid(id));
         if (invalidIds.length > 0) {
             return res.status(400).json({
                 success: false,
@@ -340,7 +354,7 @@ export const deleteMultipleContacts = async (req, res, next) => {
             });
         }
 
-        const result = await prisma.contact.deleteMany({
+        const result = await prisma.contacts.deleteMany({
             where: {
                 id: { in: contactIds }
             }
@@ -361,14 +375,14 @@ export const deleteMultipleContacts = async (req, res, next) => {
 // Admin gets contact statistics
 export const getContactStats = async (req, res, next) => {
     try {
-        const stats = await prisma.contact.aggregate({
+        const stats = await prisma.contacts.aggregate({
             _count: {
                 id: true
             }
         });
 
         // Get read/unread breakdown
-        const readStatus = await prisma.contact.groupBy({
+        const readStatus = await prisma.contacts.groupBy({
             by: ['isRead'],
             _count: {
                 id: true
@@ -379,7 +393,7 @@ export const getContactStats = async (req, res, next) => {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const recentContacts = await prisma.contact.count({
+        const recentContacts = await prisma.contacts.count({
             where: {
                 createdAt: {
                     gte: thirtyDaysAgo
@@ -388,8 +402,8 @@ export const getContactStats = async (req, res, next) => {
         });
 
         // Get unread count
-        const unreadCount = await prisma.contact.count({
-            where: { isRead: 'false' }
+        const unreadCount = await prisma.contacts.count({
+            where: { isRead: false }
         });
 
         return res.status(200).json({
@@ -399,7 +413,7 @@ export const getContactStats = async (req, res, next) => {
                 unreadContacts: unreadCount,
                 recentContacts,
                 readStatus: readStatus.map(item => ({
-                    status: item.isRead === 'true' ? 'read' : 'unread',
+                    status: item.isRead ? 'read' : 'unread',
                     count: item._count.id
                 }))
             }

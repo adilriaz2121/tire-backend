@@ -1,6 +1,6 @@
 // src/controllers/chatController.ts
 import OpenAI from "openai";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -95,81 +95,105 @@ const functions = [
 // Function implementations
 async function searchTires(params) {
   try {
-    const where = { isActive: true };
-    
-    if (params.make) {
-      where.make = { contains: params.make, mode: 'insensitive' };
-    }
-    if (params.model) {
-      where.model = { contains: params.model, mode: 'insensitive' };
-    }
-    if (params.year) {
-      where.year = params.year;
-    }
-    if (params.trim) {
-      where.trim = { contains: params.trim, mode: 'insensitive' };
-    }
-    if (params.size) {
-      where.size = params.size;
-    }
-    if (params.mfg) {
-      where.mfg = { contains: params.mfg, mode: 'insensitive' };
-    }
-    
-    if (params.min_price || params.max_price) {
-      where.price = {};
-      if (params.min_price) where.price.gte = params.min_price;
-      if (params.max_price) where.price.lte = params.max_price;
-    }
-
     const limit = Math.min(params.limit || 10, 20);
 
-    const products = await prisma.products.findMany({
-      where,
-      take: limit,
-      orderBy: { price: 'asc' },
-      select: {
-        id: true,
-        make: true,
-        model: true,
-        year: true,
-        trim: true,
-        size: true,
-        mfg: true,
-        item: true,
-        detail: true,
-        price: true,
-        quantity: true,
-        images: true,
-        description: true
-      }
-    });
+    // Determine tire sizes: explicit size OR infer from vehicle fitment table (Products)
+    let candidateSizes = [];
+    if (params.size) {
+      candidateSizes = [String(params.size).trim()];
+    } else if (params.make && params.model && params.year) {
+      const fitments = await prisma.products.findMany({
+        where: {
+          ...(params.make ? { make: { contains: String(params.make), mode: "insensitive" } } : {}),
+          ...(params.model ? { model: { contains: String(params.model), mode: "insensitive" } } : {}),
+          ...(params.year ? { year: String(params.year) } : {}),
+          ...(params.trim ? { trim: { contains: String(params.trim), mode: "insensitive" } } : {}),
+        },
+        select: { size: true },
+      });
+      candidateSizes = [...new Set(fitments.map((x) => String(x.size).trim()).filter(Boolean))];
+    }
 
-    console.log(`Found ${products.length} products for:`, params);
+    const minPrice = params.min_price !== undefined && params.min_price !== null && params.min_price !== ""
+      ? Number(params.min_price)
+      : null;
+    const maxPrice = params.max_price !== undefined && params.max_price !== null && params.max_price !== ""
+      ? Number(params.max_price)
+      : null;
+
+    const sizesSql = candidateSizes.length
+      ? Prisma.sql`AND lower(pd."size") IN (${Prisma.join(
+          candidateSizes.map((s) => Prisma.sql`${s.toLowerCase()}`),
+        )})`
+      : Prisma.sql``;
+
+    const brandSql = params.mfg
+      ? Prisma.sql`AND lower(COALESCE(pd."brand", '')) LIKE ${`%${String(params.mfg).toLowerCase()}%`}`
+      : Prisma.sql``;
+
+    const havingSql =
+      (Number.isFinite(minPrice) || Number.isFinite(maxPrice))
+        ? Prisma.sql`HAVING
+            (${Number.isFinite(minPrice) ? Prisma.sql`MIN(s."price") >= ${minPrice}` : Prisma.sql`TRUE`})
+            AND
+            (${Number.isFinite(maxPrice) ? Prisma.sql`MIN(s."price") <= ${maxPrice}` : Prisma.sql`TRUE`})`
+        : Prisma.sql``;
+
+    const items = await prisma.$queryRaw(
+      Prisma.sql`
+        SELECT
+          pd.*,
+          (ARRAY_AGG(s."id" ORDER BY s."price" ASC))[1] AS "stockId",
+          MIN(s."price")::float8 AS "stockPrice",
+          SUM(s."quantity")::int AS "stockQuantity"
+        FROM "productDetail" pd
+        JOIN "Stock" s
+          ON lower(pd."size") = lower(s."size")
+         AND lower(COALESCE(pd."brand", '')) = lower(s."mfg")
+        WHERE pd."brand" IS NOT NULL
+          AND pd."size" IS NOT NULL
+          ${sizesSql}
+          ${brandSql}
+        GROUP BY pd."id"
+        ${havingSql}
+        ORDER BY MIN(s."price") ASC
+        LIMIT ${limit}
+      `,
+    );
+
+    const products = Array.isArray(items) ? items : [];
+
+    console.log(`Found ${products.length} stocked products for:`, params);
 
     return {
       success: true,
       count: products.length,
-      products: products.map(p => ({
-        id: p.id,
-        make: p.make,
-        model: p.model,
-        year: p.year,
-        trim: p.trim,
-        // Create a proper product name
-        name: `${p.mfg} ${p.item}`.trim() || 'Tire Product',
-        tire_size: p.size,
-        size: p.size,
-        brand: p.mfg,
-        tire_model: p.item,
-        details: p.detail,
-        description: p.description,
-        price: p.price,
-        quantity: p.quantity,
-        stock: p.quantity,
-        in_stock: p.quantity > 0,
-        image: p.images?.[0] || null
-      }))
+      products: products.map((p) => {
+        const brand = (p?.brand || "").toString();
+        const model = (p?.model || p?.name || "").toString();
+        const size = (p?.size || "").toString();
+        const priceNum = Number(p?.stockPrice);
+        const qtyNum = Number(p?.stockQuantity);
+        const img = Array.isArray(p?.images) && p.images.length ? p.images[0] : (p?.thumbnail_image || null);
+        return {
+          // Use stockId if present for "buy" flows
+          id: (p?.stockId || p?.id || "").toString(),
+          product_detail_id: (p?.id || "").toString(),
+          stock_id: (p?.stockId || "").toString(),
+          name: `${brand} ${model}`.trim() || "Tire Product",
+          tire_size: size,
+          size,
+          brand,
+          tire_model: model,
+          details: (p?.features || p?.benefits || p?.tags || p?.description || "").toString(),
+          description: (p?.description || "").toString(),
+          price: Number.isFinite(priceNum) ? priceNum : null,
+          quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
+          stock: Number.isFinite(qtyNum) ? qtyNum : 0,
+          in_stock: Number.isFinite(qtyNum) ? qtyNum > 0 : false,
+          image: img,
+        };
+      }),
     };
   } catch (error) {
     console.error("Search error:", error);
@@ -183,35 +207,86 @@ async function searchTires(params) {
 
 async function getProductDetails(params) {
   try {
-    const product = await prisma.products.findUnique({
-      where: { id: params.product_id },
-      include: {
-        reviews: {
-          take: 5,
-          orderBy: { createdAt: 'desc' }
-        }
-      }
-    });
+    const id = (params.product_id || "").toString().trim();
+    if (!id) return { success: false, error: "Product not found" };
 
-    if (!product) {
-      return { success: false, error: "Product not found" };
+    // Accept either a Stock.id or a productDetail.id
+    const stock = await prisma.stock.findUnique({ where: { id } }).catch(() => null);
+
+    let pd = null;
+    let stockId = null;
+    let stockPrice = null;
+    let stockQuantity = null;
+
+    if (stock) {
+      stockId = stock.id;
+      stockPrice = stock.price;
+      stockQuantity = stock.quantity;
+
+      pd = await prisma.productDetail.findFirst({
+        where: {
+          size: stock.size,
+          brand: { equals: stock.mfg, mode: "insensitive" },
+        },
+      });
+    } else {
+      pd = await prisma.productDetail.findUnique({ where: { id } }).catch(() => null);
+      if (pd) {
+        // Pick cheapest stock for this product detail (brand+size)
+        const cheapest = await prisma.stock.findFirst({
+          where: {
+            size: pd.size,
+            mfg: { equals: (pd.brand || "").toString(), mode: "insensitive" },
+          },
+          orderBy: { price: "asc" },
+        });
+        stockId = cheapest?.id || null;
+        stockPrice = cheapest?.price ?? null;
+        stockQuantity = cheapest?.quantity ?? null;
+      }
     }
+
+    if (!pd) return { success: false, error: "Product not found" };
+
+    const reviews = await prisma.reviews.findMany({
+      where: {
+        size: pd.size,
+        brand: (pd.brand || "").toString(),
+      },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+    });
 
     return {
       success: true,
       product: {
-        id: product.id,
-        vehicle: `${product.year} ${product.make} ${product.model} ${product.trim}`.trim(),
-        tire_size: product.size,
-        brand: product.mfg,
-        model: product.item,
-        details: product.detail,
-        description: product.description,
-        price: `$${product.price.toFixed(2)}`,
-        stock: product.quantity,
-        in_stock: product.quantity > 0,
-        images: product.images,
-        reviews: product.reviews
+        id: (stockId || pd.id).toString(),
+        product_detail_id: (pd.id || "").toString(),
+        stock_id: stockId ? String(stockId) : null,
+        tire_size: pd.size,
+        brand: (pd.brand || "").toString(),
+        model: ((pd.model || pd.name) || "").toString(),
+        details: (pd.features || pd.benefits || pd.tags || pd.description || "").toString(),
+        description: (pd.description || "").toString(),
+        price: stockPrice !== null && stockPrice !== undefined ? `$${Number(stockPrice).toFixed(2)}` : "$—",
+        stock: stockQuantity !== null && stockQuantity !== undefined ? Number(stockQuantity) : 0,
+        in_stock: stockQuantity !== null && stockQuantity !== undefined ? Number(stockQuantity) > 0 : false,
+        images: Array.isArray(pd.images) ? pd.images : [],
+        thumbnail_image: pd.thumbnail_image || null,
+        specs: {
+          loadRange: pd.loadRange || null,
+          utqg: pd.utqg || null,
+          sidewall: pd.sidewall || null,
+          load_rating: pd.load_rating || null,
+          speed_rating: pd.speed_rating || null,
+          tread_depth: pd.tread_depth || null,
+          weight: pd.weight || null,
+          origin: pd.origin || null,
+          max_inflation_pressure: pd.max_inflation_pressure || null,
+          approved_rim_width_min: pd.approved_rim_width_min || null,
+          approved_rim_width_max: pd.approved_rim_width_max || null,
+        },
+        reviews,
       }
     };
   } catch (error) {
@@ -222,30 +297,16 @@ async function getProductDetails(params) {
 
 async function getAvailableSizes(params) {
   try {
-    const where = {
-      isActive: true
-    }
-
-    if (params.make) {
-      where.make = { contains: params.make, mode: 'insensitive' }
-    }
-    if (params.model) {
-      where.model = { contains: params.model, mode: 'insensitive' }
-    }
-    if (params.year) {
-      where.year = String(params.year)
-    }
-
     const products = await prisma.products.findMany({
-      where,
-      select: {
-        size: true,
-        trim: true
+      where: {
+        ...(params.make ? { make: { contains: String(params.make), mode: "insensitive" } } : {}),
+        ...(params.model ? { model: { contains: String(params.model), mode: "insensitive" } } : {}),
+        ...(params.year ? { year: String(params.year) } : {}),
       },
-      distinct: ['size']
+      select: { size: true },
     });
 
-    const sizes = [...new Set(products.map(p => p.size))].sort();
+    const sizes = [...new Set(products.map((p) => String(p.size).trim()).filter(Boolean))].sort();
 
     return {
       success: true,
@@ -340,9 +401,9 @@ export const handleChat = async (req, res) => {
         content: `${contextPrompt}
 
 AVAILABLE INFORMATION IN DATABASE:
-- Vehicle: make (manufacturer), model, year, trim
-- Tire: size, mfg (brand), item (model name), detail, description
-- Stock: quantity, price
+- Vehicle fitment: Products (make, model, year, trim -> size, mfg)
+- Tire catalog: productDetail (brand, model/name, size, specs, images)
+- Inventory: Stock (mfg, item, size, price, quantity)
 
 CRITICAL RULES FOR CONVERSATION FLOW:
 1. **REMEMBER CONTEXT**: Always check the conversation history. If the user already told you their vehicle make, model, or year, DO NOT ask for it again.
