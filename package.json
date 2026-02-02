@@ -14,7 +14,8 @@
     "init-admin": "node ./scripts/init-admin.js",
     "import-stock": "node ./scripts/import-stock.js",
     "import-data": "node ./scripts/import-data.js",
-    "import-product-detail": "node ./scripts/import-product-detail.js"
+    "import-product-detail": "node ./scripts/import-product-detail.js",
+    "generate-filters": "node ./scripts/generate-filter-options.js"
   },
   "dependencies": {
     "@api/yelp-developers": "file:.api/apis/yelp-developers",

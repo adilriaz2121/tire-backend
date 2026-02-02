@@ -496,3 +496,105 @@ Tire Deal Team
     return { success: false, error: error.message };
   }
 };
+
+const FEEDBACK_RECIPIENT = 'saifarshad3344@gmail.com';
+
+export const sendFeedbackEmail = async ({ name, email, subject = 'Product feedback', message }) => {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.error('Cannot send feedback email: Email transporter not configured');
+    return { success: false, error: 'Email service not configured' };
+  }
+
+  const subjectLine = String(subject || 'Product feedback').trim() || 'Product feedback';
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Feedback from Tire Deal</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #000000; background-color: #f1f5f9;">
+      <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f1f5f9;">
+        <tr>
+          <td align="center" style="padding: 20px 0;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+              <div style="background: #f1f5f9; padding: 24px 24px; border-bottom: 1px solid #e2e8f0;">
+                <h1 style="color: #000000; margin: 0; font-size: 22px; font-weight: 700;">New feedback</h1>
+                <p style="color: #000000; margin: 8px 0 0; font-size: 14px;">Tire Deal website</p>
+              </div>
+              <div style="padding: 24px;">
+                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;"><strong>From:</strong></td>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;">${escapeHtml(name)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;"><strong>Email:</strong></td>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;">${escapeHtml(email)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;"><strong>Subject:</strong></td>
+                    <td style="padding: 8px 0; color: #000000; font-size: 14px;">${escapeHtml(subjectLine)}</td>
+                  </tr>
+                </table>
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                  <p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #000000;">Message:</p>
+                  <p style="margin: 0; font-size: 15px; color: #000000; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(message)}</p>
+                </div>
+              </div>
+              <div style="background: #f1f5f9; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center;">
+                <p style="margin: 0; color: #000000; font-size: 12px;">Sent at ${new Date().toISOString()}</p>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+
+  const textContent = `
+New feedback – Tire Deal
+
+From: ${name}
+Email: ${email}
+Subject: ${subjectLine}
+
+Message:
+${message}
+
+---
+Sent at ${new Date().toISOString()}
+  `.trim();
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"Tire Deal" <${process.env.MAIL_USER}>`,
+      to: FEEDBACK_RECIPIENT,
+      replyTo: email,
+      subject: `[Tire Deal Feedback] ${subjectLine} – from ${name}`,
+      text: textContent,
+      html: htmlContent,
+    });
+
+    console.log('Feedback email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending feedback email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  const s = String(str);
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { sendFeedbackEmail } from '../utils/email.service.js';
 
 const prisma = new PrismaClient();
 
@@ -14,16 +15,16 @@ function parseIsRead(value) {
     return undefined;
 }
 
-// User creates a contact message
+// User creates a contact message (phone optional for feedback form)
 export const createContact = async (req, res, next) => {
     try {
         const { name, email, phone, subject, message } = req.body;
         
-        // Validate required fields
-        if (!name || !email || !phone || !subject || !message) {
+        // Validate required fields (phone optional for feedback sidebar)
+        if (!name || !email || !message) {
             return res.status(400).json({
                 success: false,
-                error: 'Name, email, phone, subject, and message are required'
+                error: 'Name, email, and message are required'
             });
         }
 
@@ -36,23 +37,18 @@ export const createContact = async (req, res, next) => {
             });
         }
 
-        // Validate phone format (basic validation)
-        const phoneStr = String(phone || '').trim();
-        if (phoneStr.length < 10) {
-            return res.status(400).json({
-                success: false,
-                error: 'Please provide a valid phone number'
-            });
-        }
+        // Phone optional: use "N/A" when missing (e.g. feedback form)
+        const phoneStr = String(phone ?? '').trim();
+        const phoneValue = phoneStr.length >= 10 ? phoneStr : 'N/A';
+        const subjectValue = String(subject ?? '').trim() || 'Product feedback';
 
         const contact = await prisma.contacts.create({
             data: {
                 name: String(name).trim(),
                 email: String(email).trim().toLowerCase(),
-                phone: phoneStr,
-                subject: String(subject).trim(),
+                phone: phoneValue,
+                subject: subjectValue,
                 message: String(message).trim(),
-                // schema default is false; keep explicit for clarity
                 isRead: false
             },
             select: {
@@ -66,6 +62,16 @@ export const createContact = async (req, res, next) => {
                 createdAt: true
             }
         });
+
+        // Send feedback email to saifarshad3344@gmail.com (non-blocking)
+        sendFeedbackEmail({
+            name: contact.name,
+            email: contact.email,
+            subject: contact.subject,
+            message: contact.message
+        }).then((result) => {
+            if (!result.success) console.error('Feedback email failed:', result.error);
+        }).catch((err) => console.error('Feedback email error:', err));
 
         return res.status(201).json({ 
             success: true,
