@@ -68,6 +68,7 @@ export const searchBusinesses = async (req, res, next) => {
         'Content-Type': 'application/json'
       }
     });
+    console.log("🚀 ~ searchBusinesses ~ response:", response)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
