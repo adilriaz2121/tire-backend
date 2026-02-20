@@ -115,6 +115,17 @@ export async function validateAddress({ streetLines, city, state, zip, country =
     reasons.push('PO Box addresses are not supported for shipping.');
   }
 
+  // If FedEx resolved to a different country, ignore its suggestion and treat as valid US address
+  if (result.countryCode && country && result.countryCode.toUpperCase() !== country.toUpperCase()) {
+    return {
+      valid: true,
+      classification: 'RESOLVED',
+      suggested: { streetLines: Array.isArray(streetLines) ? streetLines : [streetLines], city, state, zip, country },
+      reasons: [],
+      message: 'Address accepted.',
+    };
+  }
+
   // Check for city/state/zip mismatches
   if (result.city && city && result.city.toUpperCase() !== city.toUpperCase()) {
     reasons.push(`City does not match — did you mean "${result.city}"?`);

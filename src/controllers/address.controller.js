@@ -1,7 +1,7 @@
 import { validateAddress } from '../utils/fedex.service.js';
 
 export const validateAddressHandler = async (req, res) => {
-  const { streetLines, city, state, zip } = req.body;
+  const { streetLines, city, state, zip, country = 'US' } = req.body;
 
   if (!streetLines || !city || !state || !zip) {
     return res.status(400).json({
@@ -10,7 +10,7 @@ export const validateAddressHandler = async (req, res) => {
     });
   }
 
-  const result = await validateAddress({ streetLines, city, state, zip });
+  const result = await validateAddress({ streetLines, city, state, zip, country });
 
   return res.json({
     success: true,

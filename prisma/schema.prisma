@@ -164,6 +164,9 @@ model Orders {
   zip              String
   shippingLocation ShippingLocation @default(MobileInstaller)
   country          String
+  installerId      String?
+  installerName    String?
+  appointmentDate  DateTime?
   orderItems       OrderItems[]
 }
 
