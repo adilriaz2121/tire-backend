@@ -155,8 +155,9 @@ model Orders {
   totalAmount Float
   address     String
   city        String
-  discount    Float?
-  couponCode  String?
+  discount       Float?
+  couponCode     String?
+  trackingNumber String?
 
   status           OrderStatus      @default(confirmed)
   state            String

@@ -1,6 +1,21 @@
 const FEDEX_API_KEY = process.env.FEDEX_API_KEY || '';
 const FEDEX_API_SECRET = process.env.FEDEX_API_SECRET || '';
+const FEDEX_ACCOUNT_NUMBER = process.env.FEDEX_ACCOUNT_NUMBER || '';
 const FEDEX_BASE_URL = process.env.FEDEX_BASE_URL || 'https://apis-sandbox.fedex.com';
+
+const WAREHOUSE_ADDRESS = {
+  streetLines: ['301 S Millers Ferry Rd'],
+  city: 'Wilmer',
+  stateOrProvinceCode: 'TX',
+  postalCode: '75172',
+  countryCode: 'US',
+};
+
+const SHIPPER_CONTACT = {
+  personName: 'The Tire Deal',
+  phoneNumber: '0000000000',
+  companyName: 'The Tire Deal',
+};
 
 let cachedToken = null;
 let tokenExpiresAt = 0;
@@ -144,5 +159,110 @@ export async function validateAddress({ streetLines, city, state, zip, country =
     suggested,
     reasons,
     message: reasons.join(' '),
+  };
+}
+
+/**
+ * Create a FedEx shipment and return tracking number.
+ * @param {Object} recipient - { personName, phoneNumber, streetLines, city, state, zip, country }
+ * @param {number} totalWeight - Total package weight in LBS
+ * @returns {{ trackingNumber: string, shipDatestamp: string }}
+ */
+export async function createShipment({ recipient, totalWeight }) {
+  const token = await getFedExToken();
+
+  const shipmentPayload = {
+    labelResponseOptions: 'URL_ONLY',
+    accountNumber: { value: FEDEX_ACCOUNT_NUMBER },
+    requestedShipment: {
+      shipper: {
+        contact: SHIPPER_CONTACT,
+        address: WAREHOUSE_ADDRESS,
+      },
+      recipients: [
+        {
+          contact: {
+            personName: recipient.personName,
+            phoneNumber: recipient.phoneNumber || '0000000000',
+          },
+          address: {
+            streetLines: Array.isArray(recipient.streetLines)
+              ? recipient.streetLines
+              : [recipient.streetLines],
+            city: recipient.city,
+            stateOrProvinceCode: recipient.state,
+            postalCode: recipient.zip,
+            countryCode: recipient.country || 'US',
+          },
+        },
+      ],
+      pickupType: 'USE_SCHEDULED_PICKUP',
+      serviceType: 'FEDEX_GROUND',
+      packagingType: 'YOUR_PACKAGING',
+      shippingChargesPayment: {
+        paymentType: 'SENDER',
+        payor: {
+          responsibleParty: {
+            accountNumber: { value: FEDEX_ACCOUNT_NUMBER },
+          },
+        },
+      },
+      labelSpecification: {
+        labelFormatType: 'COMMON2D',
+        imageType: 'PDF',
+        labelStockType: 'PAPER_LETTER',
+      },
+      requestedPackageLineItems: [
+        {
+          weight: {
+            units: 'LB',
+            value: totalWeight,
+          },
+          dimensions: {
+            length: 30,
+            width: 30,
+            height: 15,
+            units: 'IN',
+          },
+        },
+      ],
+    },
+  };
+
+  const res = await fetch(`${FEDEX_BASE_URL}/ship/v1/shipments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(shipmentPayload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let message = 'FedEx shipment creation failed';
+    try {
+      const errorData = JSON.parse(text);
+      if (errorData.errors && errorData.errors.length > 0) {
+        message = errorData.errors.map(e => e.message).join('. ');
+      }
+    } catch {
+      message = text || message;
+    }
+    throw new Error(message);
+  }
+
+  const data = await res.json();
+  const piece = data?.output?.transactionShipments?.[0]?.pieceResponses?.[0];
+  const trackingNumber = piece?.trackingNumber
+    || data?.output?.transactionShipments?.[0]?.masterTrackingNumber?.trackingNumber;
+
+  if (!trackingNumber) {
+    throw new Error('FedEx shipment created but no tracking number returned');
+  }
+
+  return {
+    trackingNumber,
+    shipDatestamp: data?.output?.transactionShipments?.[0]?.shipDatestamp || new Date().toISOString(),
   };
 }

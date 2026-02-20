@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
-import { sendOrderStatusUpdateEmail } from '../utils/email.service.js';
+import { sendOrderStatusUpdateEmail, sendShippingEmail } from '../utils/email.service.js';
+import { createShipment } from '../utils/fedex.service.js';
 
 const prisma = new PrismaClient();
 
@@ -372,5 +373,109 @@ export const getOrderStats = async (req, res, next) => {
     } catch (error) {
         console.error('Error fetching order stats:', error);
         return next(error);
+    }
+};
+
+// Ship order via FedEx - creates shipment, saves tracking number, sends email
+export const shipOrder = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+
+        if (!isUuid(id)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid order ID format'
+            });
+        }
+
+        const order = await prisma.orders.findUnique({
+            where: { id },
+            include: {
+                orderItems: { orderBy: { createdAt: 'asc' } }
+            }
+        });
+
+        if (!order) {
+            return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        if (order.status !== 'confirmed') {
+            return res.status(400).json({
+                success: false,
+                error: `Cannot ship order with status "${order.status}". Only confirmed orders can be shipped.`
+            });
+        }
+
+        // Calculate total weight: 25 lbs per tire * total quantity
+        const totalQuantity = order.orderItems.reduce(
+            (sum, item) => sum + (item.productQuantity || 1), 0
+        );
+        const totalWeight = totalQuantity * 25;
+
+        // Create FedEx shipment
+        const shipmentResult = await createShipment({
+            recipient: {
+                personName: order.userName,
+                phoneNumber: order.phone,
+                streetLines: [order.address],
+                city: order.city,
+                state: order.state,
+                zip: order.zip,
+                country: order.country || 'US',
+            },
+            totalWeight,
+        });
+
+        // Update order with tracking number and shipped status
+        const updatedOrder = await prisma.orders.update({
+            where: { id },
+            data: {
+                status: 'shipped',
+                trackingNumber: shipmentResult.trackingNumber,
+            },
+            include: {
+                orderItems: { orderBy: { createdAt: 'asc' } }
+            }
+        });
+
+        // Send shipping email with tracking number
+        try {
+            await sendShippingEmail({
+                to: order.email,
+                customerName: order.userName,
+                orderId: order.id,
+                trackingNumber: shipmentResult.trackingNumber,
+                orderItems: order.orderItems,
+                shippingInfo: {
+                    address: order.address,
+                    city: order.city,
+                    state: order.state,
+                    zip: order.zip,
+                },
+            });
+        } catch (emailError) {
+            console.error('Failed to send shipping email:', emailError);
+        }
+
+        const orderWithDates = {
+            ...updatedOrder,
+            createdAt: updatedOrder.orderItems?.[0]?.createdAt || null,
+            updatedAt: updatedOrder.orderItems?.[updatedOrder.orderItems.length - 1]?.updatedAt || null,
+        };
+
+        return res.status(200).json({
+            success: true,
+            message: 'Order shipped successfully via FedEx',
+            data: {
+                order: orderWithDates,
+                trackingNumber: shipmentResult.trackingNumber,
+            }
+        });
+    } catch (error) {
+        console.error('Error shipping order:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create FedEx shipment'
+        });
     }
 };

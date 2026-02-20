@@ -582,6 +582,186 @@ Sent at ${new Date().toISOString()}
   }
 };
 
+export const sendShippingEmail = async ({
+  to,
+  customerName,
+  orderId,
+  trackingNumber,
+  orderItems = [],
+  shippingInfo = {},
+}) => {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.error('Cannot send email: Email transporter not configured');
+    return { success: false, error: 'Email service not configured' };
+  }
+
+  const shippingAddress = [
+    shippingInfo.address,
+    shippingInfo.city,
+    shippingInfo.state,
+    shippingInfo.zip,
+  ].filter(Boolean).join(', ');
+
+  const itemsHtml = orderItems.map((item, index) => `
+    <div style="padding: 12px 0; ${index < orderItems.length - 1 ? 'border-bottom: 1px solid #e2e8f0;' : ''}">
+      <div style="font-weight: 600; color: #000000; font-size: 15px; margin-bottom: 4px;">${item.productName || 'Product'}</div>
+      ${item.productSize ? `<div style="font-size: 13px; color: #000000;">Size: ${item.productSize}</div>` : ''}
+      ${item.productBrand ? `<div style="font-size: 13px; color: #000000;">Brand: ${item.productBrand}</div>` : ''}
+      <div style="margin-top: 8px; font-size: 14px; color: #000000;">
+        Quantity: ${item.productQuantity || 1} &times; $${Number(item.productPrice || 0).toFixed(2)} = $${Number(item.productTotal || 0).toFixed(2)}
+      </div>
+    </div>
+  `).join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <title>Your Order Is On Its Way!</title>
+      <style>
+        @media only screen and (max-width: 600px) {
+          .container { padding: 16px !important; max-width: 100% !important; }
+          .content-box { padding: 20px 16px !important; }
+          .header-box { padding: 24px 16px !important; }
+          .header-title { font-size: 24px !important; }
+          .header-text { font-size: 14px !important; }
+          .section-title { font-size: 18px !important; }
+          .text-responsive { font-size: 14px !important; }
+          .tracking-code { font-size: 20px !important; }
+        }
+      </style>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #000000; background-color: #f1f5f9;">
+      <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f1f5f9;">
+        <tr>
+          <td align="center" style="padding: 20px 0;">
+            <div class="container" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+
+              <!-- Header -->
+              <div class="header-box" style="background: #f1f5f9; padding: 32px 30px; text-align: center; border-bottom: 1px solid #e2e8f0;">
+                <p style="color: #000000; margin: 0 0 8px; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Tire Deals</p>
+                <h1 class="header-title" style="color: #000000; margin: 0; font-size: 28px; font-weight: 700;">Your Order Is On Its Way!</h1>
+                <p class="header-text" style="color: #000000; margin: 8px 0 0; font-size: 16px; font-weight: 400;">Order #${orderId}</p>
+              </div>
+
+              <!-- Content -->
+              <div class="content-box" style="padding: 32px 30px;">
+                <p class="text-responsive" style="font-size: 16px; color: #000000; margin: 0 0 20px; line-height: 1.6;">
+                  Dear <strong>${customerName || 'Valued Customer'}</strong>,
+                </p>
+
+                <p class="text-responsive" style="font-size: 16px; color: #000000; margin: 0 0 28px; line-height: 1.6;">
+                  Great news! Your order is ready to ship. You can track your package using the tracking ID below.
+                </p>
+
+                <!-- Tracking Number Card -->
+                <div style="background: #f0fdf4; border: 2px solid #22c55e; border-radius: 12px; padding: 24px; margin: 0 0 28px; text-align: center;">
+                  <p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">FedEx Tracking ID</p>
+                  <p class="tracking-code" style="margin: 0; font-size: 24px; font-weight: 700; color: #000000; font-family: 'Courier New', monospace; letter-spacing: 2px;">${trackingNumber}</p>
+                </div>
+
+                <!-- Track My Order Button -->
+                <div style="text-align: center; margin: 0 0 28px;">
+                  <a href="https://thetiredeal.com/track-order"
+                     style="display: inline-block; background: #000000; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">
+                    Track My Order
+                  </a>
+                </div>
+
+                ${orderItems.length > 0 ? `
+                  <!-- Order Items -->
+                  <div style="margin: 0 0 28px;">
+                    <h2 class="section-title" style="color: #000000; font-size: 20px; font-weight: 700; margin: 0 0 16px;">Items Being Shipped</h2>
+                    <div style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                      ${itemsHtml}
+                    </div>
+                  </div>
+                ` : ''}
+
+                ${shippingAddress ? `
+                  <!-- Shipping Address -->
+                  <div style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 0 0 28px;">
+                    <h2 class="section-title" style="color: #000000; margin: 0 0 12px; font-size: 20px; font-weight: 700;">Shipping To</h2>
+                    <p class="text-responsive" style="margin: 0; color: #000000; font-size: 15px; line-height: 1.6;">${shippingAddress}</p>
+                  </div>
+                ` : ''}
+
+                <!-- Footer Message -->
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 20px;">
+                  <p class="text-responsive" style="font-size: 15px; color: #000000; margin: 0 0 12px; line-height: 1.6;">
+                    If you have any questions about your shipment, please don't hesitate to contact our support team.
+                  </p>
+
+                  <p class="text-responsive" style="font-size: 15px; color: #000000; margin: 0; line-height: 1.6;">
+                    Best regards,<br>
+                    <strong>The Tire Deal Team</strong>
+                  </p>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div style="background: #f1f5f9; border-top: 1px solid #e2e8f0; padding: 20px 30px; text-align: center;">
+                <p class="text-responsive" style="margin: 0; color: #000000; font-size: 13px; line-height: 1.6;">
+                  This is an automated email. Please do not reply to this message.<br>
+                  &copy; ${new Date().getFullYear()} Tire Deal. All rights reserved.
+                </p>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+
+  const textContent = `
+Your Order Is On Its Way!
+
+Dear ${customerName || 'Valued Customer'},
+
+Great news! Your order is ready to ship. Here is your tracking ID:
+
+FedEx Tracking ID: ${trackingNumber}
+
+Track your order: https://thetiredeal.com/track-order
+
+${orderItems.length > 0 ? `
+Items Being Shipped:
+${orderItems.map((item, index) =>
+  `${index + 1}. ${item.productName || 'Product'} - Qty: ${item.productQuantity || 1} - $${Number(item.productTotal || 0).toFixed(2)}`
+).join('\n')}
+` : ''}
+
+${shippingAddress ? `Shipping To: ${shippingAddress}` : ''}
+
+If you have any questions about your shipment, please contact our support team.
+
+Best regards,
+Tire Deal Team
+  `;
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"Tire Deal" <${process.env.MAIL_USER}>`,
+      to: to,
+      subject: `Your Order Is On Its Way! - Tracking #${trackingNumber}`,
+      text: textContent,
+      html: htmlContent,
+    });
+
+    console.log('Shipping email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending shipping email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 function escapeHtml(str) {
   if (str == null) return '';
   const s = String(str);
