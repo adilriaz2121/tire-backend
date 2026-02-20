@@ -94,8 +94,7 @@ export const getAllOrders = async (req, res, next) => {
         // Get total count for pagination
         const total = await prisma.orders.count({ where });
 
-        // Get orders with pagination
-        // Order by the first order item's createdAt if available, otherwise by id
+        // Get orders with pagination, newest first
         const orders = await prisma.orders.findMany({
             where,
             orderBy: { id: 'desc' },
@@ -108,17 +107,6 @@ export const getAllOrders = async (req, res, next) => {
             }
         });
 
-        // Add computed createdAt from first order item for compatibility
-        const ordersWithDates = orders.map(order => ({
-            ...order,
-            createdAt: order.orderItems && order.orderItems.length > 0 
-                ? order.orderItems[0].createdAt 
-                : null,
-            updatedAt: order.orderItems && order.orderItems.length > 0
-                ? order.orderItems[order.orderItems.length - 1].updatedAt
-                : null
-        }));
-
         // Calculate pagination info
         const totalPages = Math.ceil(total / limit) || 1;
         const hasNextPage = page < totalPages;
@@ -127,7 +115,7 @@ export const getAllOrders = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             data: {
-                orders: ordersWithDates,
+                orders,
                 pagination: {
                     page,
                     limit,
