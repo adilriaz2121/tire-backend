@@ -25,7 +25,6 @@ const createTransporter = () => {
 export const sendOrderConfirmationEmail = async ({
   to,
   customerName,
-  orderId,
   paymentIntentId,
   totalAmount,
   orderItems = [],
@@ -133,6 +132,7 @@ export const sendOrderConfirmationEmail = async ({
               
               <!-- Header -->
               <div class="header-box" style="background: #f1f5f9; padding: 32px 30px; text-align: center; border-bottom: 1px solid #e2e8f0;">
+                <p style="color: #000000; margin: 0 0 8px; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Tire Deals</p>
                 <h1 class="header-title" style="color: #000000; margin: 0; font-size: 28px; font-weight: 700;">Order Confirmed</h1>
                 <p class="header-text" style="color: #000000; margin: 8px 0 0; font-size: 16px; font-weight: 400;">Thank you for your purchase</p>
               </div>
@@ -151,10 +151,6 @@ export const sendOrderConfirmationEmail = async ({
                 <div style="background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 0 0 28px;">
                   <h2 class="section-title" style="color: #000000; margin: 0 0 16px; font-size: 20px; font-weight: 700;">Order Details</h2>
                   <table role="presentation" style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                      <td style="padding: 8px 0; color: #000000; font-size: 15px;"><strong>Order ID:</strong></td>
-                      <td style="padding: 8px 0; text-align: right; color: #000000; font-size: 15px; font-weight: 600; font-family: monospace;">${orderId}</td>
-                    </tr>
                     <tr>
                       <td style="padding: 8px 0; color: #000000; font-size: 15px;"><strong>Total Amount:</strong></td>
                       <td style="padding: 8px 0; text-align: right; color: #000000; font-size: 18px; font-weight: 700;">$${Number(totalAmount).toFixed(2)}</td>
@@ -260,8 +256,6 @@ Dear ${customerName || 'Valued Customer'},
 Thank you for your order! We're excited to confirm that your payment has been processed successfully.
 
 Order Details:
-- Order ID: ${orderId}
-- Payment Intent: ${paymentIntentId}
 - Total Amount: $${Number(totalAmount).toFixed(2)}
 
 Order Items:
@@ -286,7 +280,7 @@ Tire Deal Team
     const info = await transporter.sendMail({
       from: `"Tire Deal" <${process.env.MAIL_USER}>`,
       to: to,
-      subject: `Order Confirmation - Order #${orderId}`,
+      subject: `Order Confirmation - Tire Deals`,
       text: textContent,
       html: htmlContent,
     });

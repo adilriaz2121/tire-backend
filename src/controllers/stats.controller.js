@@ -18,7 +18,7 @@ export const getAdminStats = async (req, res, next) => {
             `,
             // Get all order stats in one query
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     COUNT(*) FILTER (WHERE status = 'delivered')::int as delivered_count,
                     COUNT(*) FILTER (WHERE status IN ('confirmed', 'shipped'))::int as processing_count,
                     COALESCE(SUM("totalAmount"), 0)::float as total_revenue
@@ -52,7 +52,7 @@ export const getProductsChartData = async (req, res, next) => {
         // Get monthly product counts and total in one query
         const [monthlyDataResult, totalResult] = await Promise.all([
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     EXTRACT(MONTH FROM "createdAt")::int as month,
                     COUNT(*)::int as count
                 FROM "Products"
@@ -118,12 +118,12 @@ export const getOrdersChartData = async (req, res, next) => {
             // Get monthly order counts and revenue using the first order item's createdAt
             // Use subquery to get the month for each order based on its first order item
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     month::int,
                     COUNT(*)::int as count,
                     COALESCE(SUM("totalAmount"), 0)::float as revenue
                 FROM (
-                    SELECT 
+                    SELECT
                         o.id,
                         o."totalAmount",
                         EXTRACT(MONTH FROM MIN(oi."createdAt")) as month
@@ -138,7 +138,7 @@ export const getOrdersChartData = async (req, res, next) => {
             `,
             // Get order status breakdown
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     status,
                     COUNT(*)::int as count
                 FROM "Orders"
@@ -146,10 +146,10 @@ export const getOrdersChartData = async (req, res, next) => {
             `,
             // Get total orders, revenue, and average in one query
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     COUNT(*)::int as total_orders,
                     COALESCE(SUM("totalAmount"), 0)::float as total_revenue,
-                    CASE 
+                    CASE
                         WHEN COUNT(*) > 0 THEN COALESCE(SUM("totalAmount"), 0) / COUNT(*)::float
                         ELSE 0
                     END as avg_order_value
@@ -205,11 +205,22 @@ export const getOrdersChartData = async (req, res, next) => {
 };
 
 // Get comprehensive dashboard data (all stats in one call) - Optimized with raw SQL
+// Supports query params: ?period=day|week|month|year&year=2026&month=3
 export const getDashboardData = async (req, res, next) => {
     try {
-        const currentYear = new Date().getFullYear();
-        const startOfYear = new Date(currentYear, 0, 1).toISOString();
-        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59).toISOString();
+        const period = req.query.period || 'month'; // day, week, month, year
+        const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+        const month = req.query.month ? parseInt(req.query.month) : null;
+
+        // Build date range based on year and optional month
+        let startDate, endDate;
+        if (month) {
+            startDate = new Date(year, month - 1, 1).toISOString();
+            endDate = new Date(year, month, 0, 23, 59, 59).toISOString(); // last day of month
+        } else {
+            startDate = new Date(year, 0, 1).toISOString();
+            endDate = new Date(year, 11, 31, 23, 59, 59).toISOString();
+        }
 
         // Execute all queries in parallel using optimized raw SQL
         const [
@@ -218,74 +229,180 @@ export const getDashboardData = async (req, res, next) => {
             monthlyDataResult,
             statusBreakdownResult
         ] = await Promise.all([
-            // Get total unread contacts
+            // Get total unread contacts (not filtered by date - it's current state)
             prisma.$queryRaw`
                 SELECT COUNT(*)::int as count
                 FROM "Contacts"
                 WHERE "isRead" = false
             `,
-            // Get all order stats in one query
+            // Get order stats filtered by date range
             prisma.$queryRaw`
-                SELECT 
+                SELECT
                     COUNT(*) FILTER (WHERE status = 'delivered')::int as delivered_count,
                     COUNT(*) FILTER (WHERE status IN ('confirmed', 'shipped'))::int as processing_count,
                     COUNT(*)::int as total_orders,
                     COALESCE(SUM("totalAmount"), 0)::float as total_revenue,
-                    CASE 
+                    CASE
                         WHEN COUNT(*) > 0 THEN COALESCE(SUM("totalAmount"), 0) / COUNT(*)::float
                         ELSE 0
                     END as avg_order_value
-                FROM "Orders"
+                FROM "Orders" o
+                WHERE EXISTS (
+                    SELECT 1 FROM "OrderItems" oi
+                    WHERE oi."orderId" = o.id
+                      AND oi."createdAt" >= ${startDate}::timestamp
+                      AND oi."createdAt" <= ${endDate}::timestamp
+                )
             `,
-            // Get monthly order counts and revenue using the first order item's createdAt
-            // Use subquery to get the month for each order based on its first order item
+            // Get order counts and revenue grouped by period
+            period === 'day'
+                ? prisma.$queryRaw`
+                    SELECT
+                        day::int as period_key,
+                        COUNT(*)::int as count,
+                        COALESCE(SUM("totalAmount"), 0)::float as revenue
+                    FROM (
+                        SELECT
+                            o.id,
+                            o."totalAmount",
+                            EXTRACT(DAY FROM MIN(oi."createdAt")) as day
+                        FROM "Orders" o
+                        INNER JOIN "OrderItems" oi ON o.id = oi."orderId"
+                        WHERE oi."createdAt" >= ${startDate}::timestamp
+                          AND oi."createdAt" <= ${endDate}::timestamp
+                        GROUP BY o.id, o."totalAmount"
+                    ) daily_orders
+                    GROUP BY day
+                    ORDER BY day
+                `
+                : period === 'week'
+                ? prisma.$queryRaw`
+                    SELECT
+                        week::int as period_key,
+                        COUNT(*)::int as count,
+                        COALESCE(SUM("totalAmount"), 0)::float as revenue
+                    FROM (
+                        SELECT
+                            o.id,
+                            o."totalAmount",
+                            EXTRACT(WEEK FROM MIN(oi."createdAt")) as week
+                        FROM "Orders" o
+                        INNER JOIN "OrderItems" oi ON o.id = oi."orderId"
+                        WHERE oi."createdAt" >= ${startDate}::timestamp
+                          AND oi."createdAt" <= ${endDate}::timestamp
+                        GROUP BY o.id, o."totalAmount"
+                    ) weekly_orders
+                    GROUP BY week
+                    ORDER BY week
+                `
+                : period === 'year'
+                ? prisma.$queryRaw`
+                    SELECT
+                        yr::int as period_key,
+                        COUNT(*)::int as count,
+                        COALESCE(SUM("totalAmount"), 0)::float as revenue
+                    FROM (
+                        SELECT
+                            o.id,
+                            o."totalAmount",
+                            EXTRACT(YEAR FROM MIN(oi."createdAt")) as yr
+                        FROM "Orders" o
+                        INNER JOIN "OrderItems" oi ON o.id = oi."orderId"
+                        GROUP BY o.id, o."totalAmount"
+                    ) yearly_orders
+                    GROUP BY yr
+                    ORDER BY yr
+                `
+                : prisma.$queryRaw`
+                    SELECT
+                        month::int as period_key,
+                        COUNT(*)::int as count,
+                        COALESCE(SUM("totalAmount"), 0)::float as revenue
+                    FROM (
+                        SELECT
+                            o.id,
+                            o."totalAmount",
+                            EXTRACT(MONTH FROM MIN(oi."createdAt")) as month
+                        FROM "Orders" o
+                        INNER JOIN "OrderItems" oi ON o.id = oi."orderId"
+                        WHERE oi."createdAt" >= ${startDate}::timestamp
+                          AND oi."createdAt" <= ${endDate}::timestamp
+                        GROUP BY o.id, o."totalAmount"
+                    ) monthly_orders
+                    GROUP BY month
+                    ORDER BY month
+                `,
+            // Get order status breakdown filtered by date range
             prisma.$queryRaw`
-                SELECT 
-                    month::int,
-                    COUNT(*)::int as count,
-                    COALESCE(SUM("totalAmount"), 0)::float as revenue
-                FROM (
-                    SELECT 
-                        o.id,
-                        o."totalAmount",
-                        EXTRACT(MONTH FROM MIN(oi."createdAt")) as month
-                    FROM "Orders" o
-                    INNER JOIN "OrderItems" oi ON o.id = oi."orderId"
-                    WHERE oi."createdAt" >= ${startOfYear}::timestamp
-                      AND oi."createdAt" <= ${endOfYear}::timestamp
-                    GROUP BY o.id, o."totalAmount"
-                ) monthly_orders
-                GROUP BY month
-                ORDER BY month
-            `,
-            // Get order status breakdown
-            prisma.$queryRaw`
-                SELECT 
-                    status,
+                SELECT
+                    o.status,
                     COUNT(*)::int as count
-                FROM "Orders"
-                GROUP BY status
+                FROM "Orders" o
+                WHERE EXISTS (
+                    SELECT 1 FROM "OrderItems" oi
+                    WHERE oi."orderId" = o.id
+                      AND oi."createdAt" >= ${startDate}::timestamp
+                      AND oi."createdAt" <= ${endDate}::timestamp
+                )
+                GROUP BY o.status
             `
         ]);
 
-        // Process monthly data
-        const monthlyMap = new Map();
+        // Process chart data based on period
+        const dataMap = new Map();
         monthlyDataResult.forEach(row => {
-            monthlyMap.set(Number(row.month), {
+            dataMap.set(Number(row.period_key), {
                 count: Number(row.count),
                 revenue: Number(row.revenue)
             });
         });
 
-        const ordersMonthlyData = Array.from({ length: 12 }, (_, index) => {
-            const month = index + 1;
-            const monthData = monthlyMap.get(month);
-            return {
-                month: month,
-                count: monthData ? monthData.count : 0,
-                revenue: monthData ? monthData.revenue : 0
-            };
-        });
+        let ordersMonthlyData;
+        if (period === 'day') {
+            // Days in the selected month (or current month)
+            const daysInMonth = month
+                ? new Date(year, month, 0).getDate()
+                : new Date(year, new Date().getMonth() + 1, 0).getDate();
+            ordersMonthlyData = Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1;
+                const d = dataMap.get(day);
+                return { month: day, count: d ? d.count : 0, revenue: d ? d.revenue : 0 };
+            });
+        } else if (period === 'week') {
+            // Weeks 1–52
+            const weeks = [];
+            dataMap.forEach((val, key) => {
+                weeks.push({ month: key, count: val.count, revenue: val.revenue });
+            });
+            ordersMonthlyData = weeks.sort((a, b) => a.month - b.month);
+        } else if (period === 'year') {
+            // All years that have data
+            const yearsArr = [];
+            dataMap.forEach((val, key) => {
+                yearsArr.push({ month: key, count: val.count, revenue: val.revenue });
+            });
+            ordersMonthlyData = yearsArr.sort((a, b) => a.month - b.month);
+        } else {
+            // Default: month view - show all 12 months
+            if (month) {
+                const d = dataMap.get(month);
+                ordersMonthlyData = [{
+                    month: month,
+                    count: d ? d.count : 0,
+                    revenue: d ? d.revenue : 0
+                }];
+            } else {
+                ordersMonthlyData = Array.from({ length: 12 }, (_, index) => {
+                    const m = index + 1;
+                    const d = dataMap.get(m);
+                    return {
+                        month: m,
+                        count: d ? d.count : 0,
+                        revenue: d ? d.revenue : 0
+                    };
+                });
+            }
+        }
 
         // Format status breakdown
         const orderStatusBreakdown = statusBreakdownResult.map(row => ({

@@ -9,6 +9,7 @@ import { createContact } from "../controllers/contact.controller.js";
 import { createReview, getAllReviews, getReview, getProductReviews } from "../controllers/reviews.controller.js";
 import { handleChat, identifyVehicle } from "../controllers/ai.controller.js";
 import { searchBusinesses, getBusinessDetails } from "../controllers/yelp.controller.js";
+import { validateAddressHandler } from "../controllers/address.controller.js";
 
 const userRouter = express.Router();
 
@@ -41,5 +42,7 @@ userRouter.post("/ai/identify-vehicle", errorHandler(identifyVehicle));
 
 userRouter.get("/yelp/businesses/search", errorHandler(searchBusinesses));
 userRouter.get("/yelp/businesses/:id", errorHandler(getBusinessDetails));
+
+userRouter.post("/validate-address", errorHandler(validateAddressHandler));
 
 export default userRouter;
