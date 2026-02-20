@@ -107,6 +107,23 @@ export const getAllOrders = async (req, res, next) => {
             }
         });
 
+        // For existing orders that got a bulk createdAt, use orderItem date instead
+        const ordersWithDates = orders.map(order => {
+            const itemDate = order.orderItems && order.orderItems.length > 0
+                ? order.orderItems[0].createdAt
+                : null;
+            return {
+                ...order,
+                createdAt: itemDate || order.createdAt,
+                updatedAt: order.orderItems && order.orderItems.length > 0
+                    ? order.orderItems[order.orderItems.length - 1].updatedAt
+                    : order.updatedAt,
+            };
+        });
+
+        // Sort by createdAt descending (newest first)
+        ordersWithDates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
         // Calculate pagination info
         const totalPages = Math.ceil(total / limit) || 1;
         const hasNextPage = page < totalPages;
@@ -115,7 +132,7 @@ export const getAllOrders = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             data: {
-                orders,
+                orders: ordersWithDates,
                 pagination: {
                     page,
                     limit,
